@@ -1,0 +1,62 @@
+{
+  "name": "polyone",
+  "version": "1.0.0",
+  "description": "Enterprise Blockchain-as-a-Service platform powered by Polygon CDK",
+  "main": "index.js",
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "compile": "hardhat compile",
+    "test:contracts": "hardhat test",
+    "deploy:localhost": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:amoy": "hardhat run scripts/deploy.js --network polygonAmoy",
+    "deploy:polygon": "hardhat run scripts/deploy.js --network polygon",
+    "deploy:zkevm": "hardhat run scripts/deploy.js --network polygonZkEVM",
+    "node": "hardhat node",
+    "verify": "hardhat verify",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Adityasingh2824/PolyOne.git"
+  },
+  "keywords": [
+    "blockchain",
+    "polygon",
+    "cdk",
+    "zkEVM",
+    "agglayer",
+    "web3",
+    "baas",
+    "enterprise",
+    "smart-contracts",
+    "ethereum"
+  ],
+  "author": "Aditya Singh",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Adityasingh2824/PolyOne/issues"
+  },
+  "homepage": "https://github.com/Adityasingh2824/PolyOne#readme",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "concurrently": "^8.2.2",
+    "hardhat": "^2.19.0"
+  },
+  "dependencies": {
+    "@auth/core": "^0.34.2",
+    "dotenv": "^16.4.0",
+    "ethers": "^6.11.0",
+    "next-auth": "^4.24.11"
+  },
+  "directories": {
+    "doc": "docs"
+  }
+}
