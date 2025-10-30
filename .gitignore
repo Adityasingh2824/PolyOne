@@ -53,3 +53,10 @@ tmp/
 temp/
 *.tmp
 
+# Editor/AI
+.cursor/
+.codex/
+
+# Hardhat
+cache/
+
