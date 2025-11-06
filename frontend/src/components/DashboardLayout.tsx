@@ -14,9 +14,11 @@ import {
   FileText,
   HelpCircle,
   User,
-  Home
+  Home,
+  Wallet
 } from 'lucide-react'
 import { useWallet } from '@/hooks/useWallet'
+import { web3Service } from '@/lib/web3'
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -26,7 +28,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { address, isConnected, disconnect } = useWallet()
+  const { address, isConnected, disconnect, balance, chainId, refreshBalance } = useWallet()
 
   const handleDisconnect = () => {
     if (isConnected) {
@@ -97,9 +99,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           {/* Wallet section */}
           <div className="p-4 border-t border-white/10">
             {isConnected && address && (
-              <div className="border border-white/10 p-4 mb-3">
+              <div className="border border-white/10 p-4 mb-3 rounded-lg">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 border border-white/20 flex items-center justify-center font-bold text-xs">
+                  <div className="w-10 h-10 border border-white/20 flex items-center justify-center font-bold text-xs rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20">
                     {address.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -111,9 +113,30 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     </div>
                   </div>
                 </div>
+                
+                {/* Balance Display */}
+                {balance !== null && chainId && (
+                  <div className="mb-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Wallet className="w-4 h-4 text-purple-400" />
+                        <span className="text-xs text-white/60">Balance</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-sm">
+                          {parseFloat(balance).toFixed(4)}
+                        </div>
+                        <div className="text-xs text-white/40">
+                          {web3Service.getTokenSymbol(chainId)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 <button
                   onClick={handleDisconnect}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-white/20 hover:bg-white hover:text-black transition-all text-sm"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-white/20 hover:bg-white hover:text-black transition-all text-sm rounded-lg"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Disconnect</span>

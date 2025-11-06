@@ -17,8 +17,8 @@ export const NETWORKS = {
     chainId: '0x13882', // 80002
     chainName: 'Polygon Amoy Testnet',
     nativeCurrency: {
-      name: 'MATIC',
-      symbol: 'MATIC',
+      name: 'POL',
+      symbol: 'POL',
       decimals: 18
     },
     rpcUrls: ['https://rpc-amoy.polygon.technology'],
@@ -53,7 +53,7 @@ export class Web3Service {
   private signer: ethers.Signer | null = null
   private walletType: string = 'unknown'
 
-  async connectWallet(): Promise<{ address: string; chainId: number }> {
+  async connectWallet(autoSwitchToAmoy: boolean = true): Promise<{ address: string; chainId: number }> {
     // Only support MetaMask
     if (typeof window.ethereum === 'undefined') {
       throw new Error('MetaMask is not installed. Please install MetaMask to use this dApp.')
@@ -61,6 +61,11 @@ export class Web3Service {
 
     if (!window.ethereum.isMetaMask) {
       throw new Error('Please use MetaMask wallet. Other wallets are not supported.')
+    }
+
+    // Check if request method exists
+    if (!window.ethereum.request) {
+      throw new Error('Wallet provider does not support request method. Please update MetaMask.')
     }
 
     const ethereumProvider = window.ethereum
@@ -75,10 +80,29 @@ export class Web3Service {
       
       const address = await this.signer.getAddress()
       const network = await this.provider.getNetwork()
+      const currentChainId = Number(network.chainId)
+      
+      // Auto-switch to Polygon Amoy if enabled and not already on it
+      if (autoSwitchToAmoy && currentChainId !== 80002) {
+        try {
+          await this.switchToPolygon('POLYGON_AMOY')
+          // Wait a moment for network to update
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          // Get updated network
+          const updatedNetwork = await this.provider.getNetwork()
+          return {
+            address,
+            chainId: Number(updatedNetwork.chainId)
+          }
+        } catch (switchError: any) {
+          // If switch fails, continue with current network but log warning
+          console.warn('Failed to switch to Polygon Amoy:', switchError.message)
+        }
+      }
       
       return {
         address,
-        chainId: Number(network.chainId)
+        chainId: currentChainId
       }
     } catch (error: any) {
       if (error.code === 4001) {
@@ -89,41 +113,41 @@ export class Web3Service {
   }
 
   async switchToPolygon(network: keyof typeof NETWORKS = 'POLYGON_AMOY'): Promise<void> {
-    // Get the provider we're using (could be any injected wallet)
-    let ethereumProvider: any = null
-    
-    if (this.provider) {
-      // Get the underlying provider
-      const provider = this.provider as any
-      ethereumProvider = provider.provider || window.ethereum
-    } else if (typeof window.ethereum !== 'undefined') {
-      ethereumProvider = window.ethereum
+    // Always use window.ethereum directly for network switching
+    if (typeof window.ethereum === 'undefined') {
+      throw new Error('MetaMask is not installed')
     }
 
-    if (!ethereumProvider) {
-      throw new Error('No wallet provider found')
+    const ethereumProvider = window.ethereum
+
+    // Check if request method exists
+    if (!ethereumProvider.request) {
+      throw new Error('Wallet provider does not support request method. Please update MetaMask.')
     }
 
     const networkConfig = NETWORKS[network]
 
     try {
+      // Try to switch to the network
       await ethereumProvider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: networkConfig.chainId }]
       })
     } catch (error: any) {
       // Chain not added, add it
-      if (error.code === 4902) {
+      if (error.code === 4902 || error.code === -32603) {
         try {
           await ethereumProvider.request({
             method: 'wallet_addEthereumChain',
             params: [networkConfig]
           })
-        } catch (addError) {
-          throw new Error('Failed to add network')
+        } catch (addError: any) {
+          throw new Error(`Failed to add network: ${addError.message || 'Unknown error'}`)
         }
+      } else if (error.code === 4001) {
+        throw new Error('Network switch rejected by user')
       } else {
-        throw error
+        throw new Error(`Failed to switch network: ${error.message || 'Unknown error'}`)
       }
     }
   }
@@ -134,11 +158,23 @@ export class Web3Service {
 
   async getBalance(address: string): Promise<string> {
     if (!this.provider) {
-      throw new Error('Provider not initialized')
+      // Try to create provider if not initialized
+      if (typeof window.ethereum !== 'undefined') {
+        this.provider = new ethers.BrowserProvider(window.ethereum)
+      } else {
+        throw new Error('Provider not initialized')
+      }
     }
 
     const balance = await this.provider.getBalance(address)
     return ethers.formatEther(balance)
+  }
+
+  getTokenSymbol(chainId: number): string {
+    if (chainId === 80002) return 'POL' // Polygon Amoy
+    if (chainId === 137) return 'MATIC' // Polygon Mainnet
+    if (chainId === 1101 || chainId === 1442) return 'ETH' // zkEVM
+    return 'ETH' // Default
   }
 
   async sendTransaction(to: string, amount: string): Promise<string> {

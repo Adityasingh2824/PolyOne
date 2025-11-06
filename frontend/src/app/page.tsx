@@ -28,13 +28,23 @@ export default function Home() {
       toast.success('MetaMask connected successfully!')
     } catch (error: any) {
       if (error.message?.includes('not installed')) {
-        toast.error('MetaMask is not installed. Please install MetaMask to continue.', {
-          duration: 5000,
-          action: {
-            label: 'Install',
-            onClick: () => window.open('https://metamask.io/download/', '_blank')
-          }
-        })
+        toast.error(
+          (t) => (
+            <div className="flex flex-col gap-2">
+              <span>MetaMask is not installed. Please install MetaMask to continue.</span>
+              <button
+                onClick={() => {
+                  window.open('https://metamask.io/download/', '_blank')
+                  toast.dismiss(t.id)
+                }}
+                className="text-sm underline text-purple-400 hover:text-purple-300 self-start"
+              >
+                Install MetaMask
+              </button>
+            </div>
+          ),
+          { duration: 5000 }
+        )
       } else {
         toast.error(error.message || 'Failed to connect MetaMask')
       }

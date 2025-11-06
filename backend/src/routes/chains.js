@@ -67,8 +67,8 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// Create new chain
-router.post('/create', authenticate, async (req, res) => {
+// Create new chain (authentication optional for now)
+router.post('/create', async (req, res) => {
   try {
     const { name, chainType, rollupType, gasToken, validatorAccess, initialValidators, blockchainTxHash, blockchainChainId } = req.body;
 

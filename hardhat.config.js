@@ -1,6 +1,25 @@
 require("@nomicfoundation/hardhat-toolbox")
 require("dotenv").config()
 
+// Helper function to validate private key
+function getPrivateKey() {
+  const privateKey = process.env.PRIVATE_KEY
+  
+  // Check if private key exists and is not a placeholder
+  if (!privateKey || 
+      privateKey === "your_private_key_here" || 
+      privateKey.trim() === "" ||
+      !privateKey.startsWith("0x") ||
+      privateKey.length !== 66) {
+    return null
+  }
+  
+  return privateKey
+}
+
+// Get valid private key
+const privateKey = getPrivateKey()
+
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
@@ -16,25 +35,25 @@ module.exports = {
     // Polygon Mainnet
     polygon: {
       url: process.env.POLYGON_RPC_URL || "https://polygon-rpc.com",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: privateKey ? [privateKey] : [],
       chainId: 137
     },
     // Polygon Amoy Testnet
     polygonAmoy: {
       url: process.env.POLYGON_AMOY_RPC_URL || "https://rpc-amoy.polygon.technology",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: privateKey ? [privateKey] : [],
       chainId: 80002
     },
     // Polygon zkEVM
     polygonZkEVM: {
       url: process.env.ZKEVM_RPC_URL || "https://zkevm-rpc.com",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: privateKey ? [privateKey] : [],
       chainId: 1101
     },
     // Polygon zkEVM Testnet
     polygonZkEVMTestnet: {
       url: "https://rpc.public.zkevm-test.net",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: privateKey ? [privateKey] : [],
       chainId: 1442
     },
     // Hardhat local network

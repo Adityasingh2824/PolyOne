@@ -88,6 +88,21 @@ export function useWallet() {
     }
   }, [connect])
 
+  // Refresh balance periodically and on chain changes
+  useEffect(() => {
+    if (state.address && state.isConnected) {
+      // Refresh balance immediately
+      refreshBalance()
+      
+      // Set up interval to refresh balance every 30 seconds
+      const interval = setInterval(() => {
+        refreshBalance()
+      }, 30000)
+
+      return () => clearInterval(interval)
+    }
+  }, [state.address, state.isConnected, refreshBalance])
+
   // Listen for account changes
   useEffect(() => {
     if (typeof window.ethereum !== 'undefined') {
@@ -99,7 +114,16 @@ export function useWallet() {
         }
       }
 
-      const handleChainChanged = () => {
+      const handleChainChanged = async () => {
+        // Refresh balance when chain changes
+        if (state.address) {
+          try {
+            await refreshBalance()
+          } catch (error) {
+            console.error('Failed to refresh balance on chain change:', error)
+          }
+        }
+        // Reload to update chainId
         window.location.reload()
       }
 
@@ -107,8 +131,10 @@ export function useWallet() {
       window.ethereum.on('chainChanged', handleChainChanged)
 
       return () => {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
-        window.ethereum.removeListener('chainChanged', handleChainChanged)
+        if (typeof window.ethereum !== 'undefined') {
+          window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
+          window.ethereum.removeListener('chainChanged', handleChainChanged)
+        }
       }
     }
   }, [connect, disconnect])

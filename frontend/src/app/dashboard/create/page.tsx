@@ -47,6 +47,10 @@ export default function CreateChainPage() {
     return null
   }
 
+  // Check if contract is configured
+  const contractAddress = process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS
+  const isContractConfigured = contractAddress && contractAddress.trim() !== ''
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -61,66 +65,19 @@ export default function CreateChainPage() {
       return
     }
 
-    // Check if contract address is configured
-    const contractAddress = process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS
-    if (!contractAddress) {
-      // Warn but allow continuation (chain will still be created on backend)
-      toast.error('Chain Factory contract not configured. On-chain registration will be skipped. Please set NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS to enable blockchain registration.', {
-        duration: 6000
-      })
-      // Continue with backend-only deployment
-      // Skip blockchain registration and proceed directly to backend
-      setLoading(true)
-      try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-
-        const response = await axios.post(
-          `${apiUrl}/api/chains/create`,
-          {
-            name: formData.name,
-            chainType: formData.chainType,
-            rollupType: formData.rollupType,
-            gasToken: formData.gasToken,
-            validatorAccess: formData.validatorAccess,
-            initialValidators: formData.initialValidators,
-            walletAddress: address
-          },
-          {
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            timeout: 30000
-          }
-        )
-
-        const chainData = {
-          ...response.data.chain,
-          id: response.data.chainId,
-          owner: address,
-          createdAt: new Date().toISOString()
-        }
-
-        const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
-        existingChains.push(chainData)
-        localStorage.setItem('userChains', JSON.stringify(existingChains))
-
-        toast.success('✅ Chain deployment started!', {
-          duration: 5000,
+    // Check if contract address is configured (REQUIRED for on-chain registration)
+    if (!isContractConfigured) {
+      toast.error(
+        'Chain Factory contract not configured. Please deploy the contract and set NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS in frontend/.env.local. See DEPLOYMENT_GUIDE.md for instructions.',
+        {
+          duration: 8000,
           style: {
-            background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+            background: '#ef4444',
             color: 'white',
           },
-        })
-
-        setTimeout(() => {
-          router.push('/dashboard')
-        }, 2000)
-      } catch (error: any) {
-        console.error('Error creating chain:', error)
-        toast.error('Failed to create chain: ' + (error.response?.data?.message || error.message))
-      } finally {
-        setLoading(false)
-      }
+        }
+      )
+      setLoading(false)
       return
     }
 
@@ -128,17 +85,17 @@ export default function CreateChainPage() {
     let currentChainId = chainId
     if (!isPolygonNetwork) {
       try {
-        toast.loading('Switching to Polygon network...', { id: 'network-switch' })
-        await web3Service.switchToPolygon('POLYGON_AMOY') // Default to testnet, can be changed to mainnet
+        toast.loading('Switching to Polygon Amoy Testnet...', { id: 'network-switch' })
+        await web3Service.switchToPolygon('POLYGON_AMOY')
         // Wait a moment for the network to update
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise(resolve => setTimeout(resolve, 1500))
         // Get updated chainId from provider
         if (window.ethereum) {
           const provider = new ethers.BrowserProvider(window.ethereum)
           const network = await provider.getNetwork()
           currentChainId = Number(network.chainId)
         }
-        toast.success('Switched to Polygon network!', { id: 'network-switch' })
+        toast.success('Switched to Polygon Amoy Testnet!', { id: 'network-switch' })
       } catch (networkError: any) {
         toast.error(`Failed to switch network: ${networkError.message}`, { id: 'network-switch' })
         return
@@ -197,63 +154,136 @@ export default function CreateChainPage() {
         duration: 3000
       })
 
-      // Step 2: Call backend API to create chain infrastructure
-      toast.loading('🚀 Starting chain deployment...', { id: 'backend-deploy' })
-
-      // Check backend connectivity first (non-blocking)
+      // Step 2: Call backend API to create chain infrastructure (optional)
+      // Backend is only needed for infrastructure deployment, not for on-chain registration
+      let chainData: any = null
+      
       try {
-        const healthCheck = await axios.get(`${apiUrl}/health`, {
-          timeout: 5000
-        })
-        console.log('Backend health check:', healthCheck.data)
-      } catch (healthError: any) {
-        console.warn('Backend health check failed (will still attempt request):', healthError)
-      }
+        toast.loading('🚀 Starting chain deployment...', { id: 'backend-deploy' })
 
-      // Call backend API to create chain
-      const response = await axios.post(
-        `${apiUrl}/api/chains/create`,
-        {
-          name: formData.name,
-          chainType: formData.chainType,
-          rollupType: formData.rollupType,
-          gasToken: formData.gasToken,
-          validatorAccess: formData.validatorAccess,
-          initialValidators: formData.initialValidators,
-          blockchainTxHash: txHashValue, // Include transaction hash
-          blockchainChainId: currentChainId,
-          walletAddress: address
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          timeout: 30000 // 30 second timeout
+        // Check backend connectivity first
+        try {
+          const healthCheck = await axios.get(`${apiUrl}/health`, {
+            timeout: 5000
+          })
+          console.log('Backend health check:', healthCheck.data)
+        } catch (healthError: any) {
+          console.warn('Backend not available, continuing with on-chain registration only')
+          throw new Error('BACKEND_NOT_AVAILABLE')
         }
-      )
 
-      const chainData = {
-        ...response.data.chain,
-        id: response.data.chainId,
-        owner: address,
-        createdAt: new Date().toISOString(),
-        blockchainTxHash: txHashValue,
-        polygonScanUrl: scanUrl
+        // Call backend API to create chain
+        const response = await axios.post(
+          `${apiUrl}/api/chains/create`,
+          {
+            name: formData.name,
+            chainType: formData.chainType,
+            rollupType: formData.rollupType,
+            gasToken: formData.gasToken,
+            validatorAccess: formData.validatorAccess,
+            initialValidators: formData.initialValidators,
+            blockchainTxHash: txHashValue,
+            blockchainChainId: currentChainId,
+            walletAddress: address
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 30000
+          }
+        )
+
+        chainData = {
+          ...response.data.chain,
+          id: response.data.chainId,
+          owner: address,
+          createdAt: new Date().toISOString(),
+          blockchainTxHash: txHashValue,
+          polygonScanUrl: scanUrl
+        }
+
+        toast.success('✅ Chain deployment started!', { 
+          id: 'backend-deploy',
+          duration: 5000,
+          style: {
+            background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+            color: 'white',
+          },
+        })
+      } catch (backendError: any) {
+        // Backend is optional - chain is already registered on-chain
+        if (backendError.message === 'BACKEND_NOT_AVAILABLE' || 
+            backendError.code === 'ECONNREFUSED' || 
+            backendError.message?.includes('Network Error')) {
+          
+          // Create chain data from on-chain registration only
+          chainData = {
+            id: `chain-${Date.now()}`,
+            name: formData.name,
+            chainType: formData.chainType,
+            rollupType: formData.rollupType,
+            gasToken: formData.gasToken,
+            owner: address,
+            status: 'on-chain-registered',
+            createdAt: new Date().toISOString(),
+            blockchainTxHash: txHashValue,
+            polygonScanUrl: scanUrl,
+            blockchainChainId: currentChainId,
+            note: 'Chain registered on blockchain. Backend infrastructure deployment skipped (backend server not available).'
+          }
+
+          toast.success('✅ Chain registered on blockchain!', { 
+            id: 'backend-deploy',
+            duration: 5000,
+            style: {
+              background: 'linear-gradient(135deg, #10b981, #059669)',
+              color: 'white',
+            },
+          })
+          
+          toast('ℹ️ Backend server not available. Chain is registered on-chain but infrastructure deployment skipped.', {
+            duration: 8000,
+            style: {
+              background: '#3b82f6',
+              color: 'white',
+            },
+          })
+        } else {
+          // Other backend errors
+          console.error('Backend error:', backendError)
+          toast('⚠️ Chain registered on blockchain, but backend deployment failed.', {
+            id: 'backend-deploy',
+            duration: 5000,
+            style: {
+              background: '#f59e0b',
+              color: 'white',
+            },
+          })
+          
+          // Still create chain data
+          chainData = {
+            id: `chain-${Date.now()}`,
+            name: formData.name,
+            chainType: formData.chainType,
+            rollupType: formData.rollupType,
+            gasToken: formData.gasToken,
+            owner: address,
+            status: 'on-chain-registered',
+            createdAt: new Date().toISOString(),
+            blockchainTxHash: txHashValue,
+            polygonScanUrl: scanUrl,
+            blockchainChainId: currentChainId
+          }
+        }
       }
 
       // Save to localStorage for frontend display
-      const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
-      existingChains.push(chainData)
-      localStorage.setItem('userChains', JSON.stringify(existingChains))
-
-      toast.success('✅ Chain deployment started!', { 
-        id: 'backend-deploy',
-        duration: 5000,
-        style: {
-          background: 'linear-gradient(135deg, #a855f7, #ec4899)',
-          color: 'white',
-        },
-      })
+      if (chainData) {
+        const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
+        existingChains.push(chainData)
+        localStorage.setItem('userChains', JSON.stringify(existingChains))
+      }
 
       setTimeout(() => {
         router.push('/dashboard')
@@ -408,7 +438,26 @@ export default function CreateChainPage() {
               />
             </div>
 
-            {!isPolygonNetwork && isConnected && (
+            {!isContractConfigured && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3">
+                <Info className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-bold text-red-400 mb-1">Chain Factory Contract Not Configured</h3>
+                  <p className="text-sm text-gray-300 mb-2">
+                    To enable on-chain registration, you need to deploy the ChainFactory contract and configure it.
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    <strong>Steps:</strong><br />
+                    1. Deploy the contract: <code className="bg-black/30 px-1 rounded">npm run deploy:amoy</code> (or <code className="bg-black/30 px-1 rounded">npm run deploy:polygon</code> for mainnet)<br />
+                    2. Copy the deployed contract address<br />
+                    3. Add <code className="bg-black/30 px-1 rounded">NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS=0x...</code> to <code className="bg-black/30 px-1 rounded">frontend/.env.local</code><br />
+                    4. Restart your frontend server
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!isPolygonNetwork && isConnected && isContractConfigured && (
               <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex items-start gap-3">
                 <Info className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
                 <div>

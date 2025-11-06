@@ -1,61 +1,91 @@
-# 🚀 Deploy to Vercel - Quick Guide
+# 🚀 Deploy to Vercel - Right Now!
 
-## Step 1: Set Root Directory (REQUIRED)
+## Quick Deployment Steps
 
-**⚠️ CRITICAL:** You MUST set Root Directory in Vercel Dashboard first:
-
-1. Go to: https://vercel.com/dashboard
-2. Click on your project: `poly-one`
-3. Go to: **Settings** → **General**
-4. Scroll to: **Root Directory**
-5. Click **Edit** and set it to: `frontend`
-6. Click **Save**
-
-**This step is REQUIRED - deployment will fail without it!**
-
-## Step 2: Deploy
-
-After setting Root Directory, run:
+### Option 1: Deploy via Vercel CLI (Fastest)
 
 ```bash
+# Navigate to frontend directory
+cd frontend
+
+# Deploy to Vercel
+vercel
+
+# Follow the prompts:
+# - Set up and deploy? Yes
+# - Which scope? (Select your account)
+# - Link to existing project? No (or Yes if you have one)
+# - Project name? polyone (or your preferred name)
+# - Directory? ./ (current directory)
+# - Override settings? No
+
+# After deployment, deploy to production:
 vercel --prod
 ```
 
-Or if you want a preview deployment first:
+### Option 2: Deploy via Vercel Dashboard
 
-```bash
-vercel
+1. **Push to GitHub first**:
+   ```bash
+   git add .
+   git commit -m "Ready for Vercel deployment"
+   git push origin main
+   ```
+
+2. **Go to Vercel**:
+   - Visit: https://vercel.com/new
+   - Click "Import Git Repository"
+   - Select your repository
+
+3. **Configure**:
+   - **Root Directory**: `frontend` ⚠️ **CRITICAL!**
+   - Framework: Next.js (auto-detected)
+   - Click "Deploy"
+
+## ⚠️ CRITICAL: After Deployment
+
+### 1. Set Root Directory (if using Dashboard)
+
+1. Go to: Vercel Dashboard → Your Project → Settings → General
+2. Find: "Root Directory"
+3. Set to: `frontend`
+4. Save
+
+### 2. Add Environment Variables
+
+Go to: **Settings → Environment Variables** and add:
+
+```
+NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS=0x7Eb4d5BeC7aabA9e758A50188d6f6581cbE5411c
+NEXT_PUBLIC_CHAIN_REGISTRY_ADDRESS=0x457e9323366369c04b8e0Db2e409d5E9f3B60252
+NEXT_PUBLIC_DEFAULT_NETWORK=polygonAmoy
 ```
 
-## What Happens
+**For each variable:**
+- Enable for: Production, Preview, Development
+- Click "Save"
 
-With Root Directory = `frontend`, Vercel will:
-- ✅ Upload only the `frontend` directory
-- ✅ Auto-detect Next.js
-- ✅ Install dependencies from `frontend/package.json`
-- ✅ Run `npm run build` (which runs `next build`)
-- ✅ Deploy your app
+### 3. Redeploy
 
-## Environment Variables (Optional but Recommended)
+After adding environment variables, **redeploy**:
+- Go to Deployments tab
+- Click ⋮ on latest deployment
+- Click "Redeploy"
 
-Before deploying, set these in Vercel Dashboard → Settings → Environment Variables:
+## ✅ Done!
 
-- `JWT_SECRET` - For authentication (generate with: `openssl rand -base64 32`)
-- `NEXTAUTH_URL` - Your Vercel URL (e.g., `https://your-app.vercel.app`)
-- `NEXTAUTH_SECRET` - For NextAuth.js (generate with: `openssl rand -base64 32`)
+Your app will be live at: `https://your-project.vercel.app`
 
-## Troubleshooting
+## 🎯 Quick Commands
 
-**"No Next.js version detected"**
-- Root Directory is not set to `frontend` - check dashboard
+```bash
+# Deploy to preview
+cd frontend
+vercel
 
-**Build fails with "Cannot find module 'tailwindcss'"**
-- Make sure Root Directory is set correctly
-- Dependencies should install automatically
+# Deploy to production
+vercel --prod
 
-**"cd: backend: No such file or directory"**
-- Root Directory is not set - Vercel is using root package.json instead
-
-
-
-
+# Check deployment status
+vercel ls
+```
