@@ -4,6 +4,8 @@ const nextConfig = {
   images: {
     domains: ['localhost'],
   },
+  // Ensure trailing slashes are handled correctly for Vercel
+  trailingSlash: false,
   // Environment variables that should be available on the client
   // These are automatically available if they start with NEXT_PUBLIC_
   // But we can also explicitly define them here for clarity

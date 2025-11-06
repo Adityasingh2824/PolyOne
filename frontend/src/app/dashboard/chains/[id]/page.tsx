@@ -28,6 +28,7 @@ import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 export default function ChainDetailPage() {
   const params = useParams()
   const router = useRouter()
+  // Next.js automatically decodes URL parameters, so we just use it directly
   const chainId = params.id as string
   const [chain, setChain] = useState<any>(null)
   const [metrics, setMetrics] = useState<any>(null)
@@ -36,6 +37,11 @@ export default function ChainDetailPage() {
   const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
+    if (!chainId) {
+      setLoading(false)
+      return
+    }
+    
     loadChainData()
     loadMetrics()
     loadAnalytics()
@@ -49,9 +55,20 @@ export default function ChainDetailPage() {
   }, [chainId])
 
   const loadChainData = async () => {
+    if (!chainId) return
+    
     try {
       const storedChains = JSON.parse(localStorage.getItem('userChains') || '[]')
-      const foundChain = storedChains.find((c: any) => c.id === chainId)
+      // Try exact match first
+      let foundChain = storedChains.find((c: any) => c.id === chainId)
+      
+      // If not found, try matching without URL encoding
+      if (!foundChain) {
+        foundChain = storedChains.find((c: any) => {
+          const cId = String(c.id || '')
+          return cId === chainId || decodeURIComponent(cId) === chainId || cId === decodeURIComponent(chainId)
+        })
+      }
       
       if (foundChain) {
         setChain(foundChain)

@@ -301,7 +301,10 @@ export default function MyChainsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
                 className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-4 sm:p-6 border border-white/10 hover:border-purple-500/50 transition-all group cursor-pointer"
-                onClick={() => router.push(`/dashboard/chains/${chain.id}`)}
+                onClick={() => {
+                  const safeId = encodeURIComponent(String(chain.id || ''))
+                  router.push(`/dashboard/chains/${safeId}`)
+                }}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start gap-4">
@@ -310,7 +313,7 @@ export default function MyChainsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <Link href={`/dashboard/chains/${chain.id}`} onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/dashboard/chains/${encodeURIComponent(String(chain.id || ''))}`} onClick={(e) => e.stopPropagation()}>
                           <h3 className="text-base sm:text-lg font-bold hover:text-purple-400 transition-colors">
                             {chain.name}
                           </h3>
@@ -368,7 +371,7 @@ export default function MyChainsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 self-end sm:self-center">
-                    <Link href={`/dashboard/chains/${chain.id}`} onClick={(e) => e.stopPropagation()}>
+                    <Link href={`/dashboard/chains/${encodeURIComponent(String(chain.id || ''))}`} onClick={(e) => e.stopPropagation()}>
                       <button className="px-3 sm:px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all text-xs sm:text-sm">
                         <Activity className="w-4 h-4" />
                       </button>
