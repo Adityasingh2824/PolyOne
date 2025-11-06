@@ -200,6 +200,31 @@ textarea::placeholder {
   @apply text-white/40;
 }
 
+/* Select Dropdown Options Styling */
+select {
+  color: white;
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+select option {
+  background-color: #0f172a !important;
+  color: white !important;
+  padding: 0.5rem;
+}
+
+select option:hover,
+select option:focus,
+select option:checked {
+  background-color: #1e293b !important;
+  color: white !important;
+}
+
+/* For browsers that support it */
+select:focus option:checked {
+  background: linear-gradient(#1e293b, #1e293b);
+  background-color: #1e293b !important;
+}
+
 /* Card Styles */
 .card {
   @apply border border-white/10 hover:border-white/30 transition-all;

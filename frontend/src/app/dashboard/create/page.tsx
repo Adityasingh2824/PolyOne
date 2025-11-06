@@ -14,6 +14,9 @@ import { web3Service, NETWORKS } from '@/lib/web3'
 
 const CHAIN_FACTORY_ABI = [
   "function createChain(string memory _name, string memory _chainType, string memory _rollupType, string memory _gasToken, uint256 _validators, string memory _rpcUrl, string memory _explorerUrl) external returns (uint256)",
+  "function getChain(uint256 _chainId) external view returns (uint256 id, address owner, string memory name, string memory chainType, string memory rollupType, string memory gasToken, uint256 validators, uint256 createdAt, bool isActive, string memory rpcUrl, string memory explorerUrl)",
+  "function getUserChains(address _user) external view returns (uint256[] memory)",
+  "function getTotalChains() external view returns (uint256)",
   "event ChainCreated(uint256 indexed chainId, address indexed owner, string name, string chainType, string rollupType)"
 ]
 
@@ -62,6 +65,13 @@ export default function CreateChainPage() {
     // Validate form data
     if (!formData.name || !formData.gasToken) {
       toast.error('Please fill in all required fields')
+      return
+    }
+
+    // Validate validators count
+    const validatorsCount = parseInt(formData.initialValidators)
+    if (isNaN(validatorsCount) || validatorsCount < 1) {
+      toast.error('Initial validators must be a number greater than 0')
       return
     }
 
@@ -116,7 +126,31 @@ export default function CreateChainPage() {
 
       const provider = new ethers.BrowserProvider(window.ethereum)
       const signer = await provider.getSigner()
-      const contract = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, signer)
+      
+      // Validate contract address format
+      if (!ethers.isAddress(contractAddress)) {
+        throw new Error('Invalid contract address. Please check NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS in your environment variables.')
+      }
+
+      // Check if contract is deployed by checking code at address
+      const code = await provider.getCode(contractAddress)
+      if (code === '0x' || code === '0x0') {
+        throw new Error('No contract found at the specified address. Please ensure the ChainFactory contract is deployed.')
+      }
+      console.log('Contract code found at address:', contractAddress)
+
+      // Test contract connection by calling a view function
+      const contract = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, provider)
+      try {
+        const totalChains = await contract.getTotalChains()
+        console.log('Contract connection test successful. Total chains:', totalChains.toString())
+      } catch (testError: any) {
+        console.warn('Contract connection test failed:', testError)
+        // Don't throw, just log - the contract might still work for write operations
+      }
+
+      // Create contract with signer for write operations
+      const contractWithSigner = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, signer)
 
       // Generate temporary URLs (will be updated after backend deployment)
       const tempChainId = `temp-${Date.now()}`
@@ -125,15 +159,195 @@ export default function CreateChainPage() {
 
       toast.loading('📝 Creating chain on Polygon blockchain...', { id: 'blockchain-tx' })
       
-      const tx = await contract.createChain(
-        formData.name,
-        formData.chainType,
-        formData.rollupType,
-        formData.gasToken.toUpperCase(),
-        parseInt(formData.initialValidators),
-        tempRpcUrl,
-        tempExplorerUrl
-      )
+      // Check balance first
+      const balance = await provider.getBalance(await signer.getAddress())
+      if (balance === 0n) {
+        throw new Error('Insufficient balance. Please add POL/MATIC to your wallet.')
+      }
+
+      // Prepare transaction parameters
+      const txParams = {
+        name: formData.name,
+        chainType: formData.chainType,
+        rollupType: formData.rollupType,
+        gasToken: formData.gasToken.toUpperCase(),
+        validators: parseInt(formData.initialValidators),
+        rpcUrl: tempRpcUrl,
+        explorerUrl: tempExplorerUrl
+      }
+
+      console.log('Transaction parameters:', txParams)
+      console.log('Contract address:', contractAddress)
+      console.log('Signer address:', await signer.getAddress())
+
+      // First, try to populate the transaction to validate it
+      let populatedTx
+      try {
+        toast.loading('⏳ Preparing transaction...', { id: 'blockchain-tx' })
+        populatedTx = await contractWithSigner.createChain.populateTransaction(
+          txParams.name,
+          txParams.chainType,
+          txParams.rollupType,
+          txParams.gasToken,
+          txParams.validators,
+          txParams.rpcUrl,
+          txParams.explorerUrl
+        )
+        console.log('Populated transaction:', populatedTx)
+      } catch (populateError: any) {
+        console.error('Transaction populate error:', populateError)
+        throw new Error(`Failed to prepare transaction: ${populateError.message || populateError.reason || 'Unknown error'}`)
+      }
+
+      // Estimate gas with populated transaction
+      let gasEstimate: bigint
+      try {
+        toast.loading('⏳ Estimating gas...', { id: 'blockchain-tx' })
+        gasEstimate = await provider.estimateGas(populatedTx)
+        console.log('Gas estimate:', gasEstimate.toString())
+        // Add 30% buffer to gas estimate for safety
+        gasEstimate = (gasEstimate * 130n) / 100n
+      } catch (gasError: any) {
+        console.error('Gas estimation error:', gasError)
+        console.error('Error details:', {
+          code: gasError.code,
+          message: gasError.message,
+          reason: gasError.reason,
+          data: gasError.data,
+          error: gasError.error
+        })
+        
+        let gasErrorMessage = 'Gas estimation failed. '
+        
+        // Try to decode revert reason
+        if (gasError.reason) {
+          gasErrorMessage += `Reason: ${gasError.reason}`
+        } else if (gasError.data) {
+          try {
+            // Try to decode error data
+            const errorData = typeof gasError.data === 'string' ? gasError.data : JSON.stringify(gasError.data)
+            gasErrorMessage += `Error: ${errorData}`
+          } catch (e) {
+            gasErrorMessage += 'Unable to decode error. The transaction would likely revert.'
+          }
+        } else if (gasError.message) {
+          gasErrorMessage += gasError.message
+        } else {
+          gasErrorMessage += 'The transaction would likely fail. Please check your inputs and try again.'
+        }
+        
+        throw new Error(gasErrorMessage)
+      }
+
+      // Get fee data
+      const feeData = await provider.getFeeData()
+      console.log('Fee data:', {
+        gasPrice: feeData.gasPrice?.toString(),
+        maxFeePerGas: feeData.maxFeePerGas?.toString(),
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas?.toString()
+      })
+
+      // Send transaction - try simpler approach first
+      let tx
+      try {
+        toast.loading('📤 Sending transaction...', { id: 'blockchain-tx' })
+        
+        // Use populateTransaction and sendTransaction for more control
+        populatedTx.gasLimit = gasEstimate
+        
+        // Add fee data based on network type
+        if (feeData.maxFeePerGas) {
+          // EIP-1559 transaction
+          populatedTx.maxFeePerGas = feeData.maxFeePerGas
+          populatedTx.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || feeData.maxFeePerGas / 2n
+        } else if (feeData.gasPrice) {
+          // Legacy transaction
+          populatedTx.gasPrice = feeData.gasPrice
+        }
+
+        console.log('Sending transaction with params:', {
+          to: populatedTx.to,
+          data: populatedTx.data?.slice(0, 20) + '...',
+          gasLimit: populatedTx.gasLimit?.toString(),
+          maxFeePerGas: populatedTx.maxFeePerGas?.toString(),
+          gasPrice: populatedTx.gasPrice?.toString()
+        })
+
+        // Try sending using signer.sendTransaction first
+        tx = await signer.sendTransaction(populatedTx)
+        console.log('Transaction sent:', tx.hash)
+      } catch (txError: any) {
+        console.error('Transaction send error:', txError)
+        console.error('Error details:', {
+          code: txError.code,
+          message: txError.message,
+          reason: txError.reason,
+          data: txError.data,
+          error: txError.error,
+          action: txError.action,
+          transaction: txError.transaction
+        })
+        
+        // Try fallback method if direct sendTransaction failed
+        if (txError.code === -32603 || txError.error?.code === -32603) {
+          console.log('Attempting fallback method (contract method call)...')
+          try {
+            // Fallback: use contract method directly (let ethers handle everything)
+            tx = await contractWithSigner.createChain(
+              txParams.name,
+              txParams.chainType,
+              txParams.rollupType,
+              txParams.gasToken,
+              txParams.validators,
+              txParams.rpcUrl,
+              txParams.explorerUrl,
+              {
+                gasLimit: gasEstimate
+              }
+            )
+            console.log('Transaction sent via fallback method:', tx.hash)
+          } catch (fallbackError: any) {
+            console.error('Fallback method also failed:', fallbackError)
+            // Continue with original error handling
+          }
+        }
+        
+        // If we still don't have a transaction, throw error
+        if (!tx) {
+          let txErrorMessage = 'Failed to send transaction. '
+          
+          // Handle different error types
+          if (txError.code === -32603 || txError.error?.code === -32603) {
+            const rpcError = txError.error || txError
+            if (rpcError.data) {
+              // Try to decode the error data
+              try {
+                const errorData = typeof rpcError.data === 'string' ? rpcError.data : JSON.stringify(rpcError.data)
+                txErrorMessage += `RPC Error: ${errorData}`
+              } catch (e) {
+                txErrorMessage += 'Internal JSON-RPC error. Check console for details.'
+              }
+            } else if (rpcError.message) {
+              txErrorMessage += rpcError.message
+            } else {
+              txErrorMessage += 'Internal JSON-RPC error. This might be due to:\n- Network connectivity issues\n- RPC endpoint problems\n- Contract execution failure\n\nPlease check your network connection and try again.'
+            }
+          } else if (txError.code === 4001) {
+            txErrorMessage = 'Transaction rejected by user'
+          } else if (txError.reason) {
+            txErrorMessage += txError.reason
+          } else if (txError.message) {
+            txErrorMessage += txError.message
+          } else {
+            txErrorMessage += 'Unknown error occurred. Please check the console for details and try again.'
+          }
+          
+          // Log full error for debugging
+          console.error('Full error object:', JSON.stringify(txError, Object.getOwnPropertyNames(txError), 2))
+          
+          throw new Error(txErrorMessage)
+        }
+      }
 
       const txHashValue = tx.hash
       setTxHash(txHashValue)
@@ -200,7 +414,8 @@ export default function CreateChainPage() {
           owner: address,
           createdAt: new Date().toISOString(),
           blockchainTxHash: txHashValue,
-          polygonScanUrl: scanUrl
+          polygonScanUrl: scanUrl,
+          onChainRegistered: true
         }
 
         toast.success('✅ Chain deployment started!', { 
@@ -230,6 +445,8 @@ export default function CreateChainPage() {
             blockchainTxHash: txHashValue,
             polygonScanUrl: scanUrl,
             blockchainChainId: currentChainId,
+            onChainRegistered: true,
+            initialValidators: formData.initialValidators,
             note: 'Chain registered on blockchain. Backend infrastructure deployment skipped (backend server not available).'
           }
 
@@ -273,7 +490,9 @@ export default function CreateChainPage() {
             createdAt: new Date().toISOString(),
             blockchainTxHash: txHashValue,
             polygonScanUrl: scanUrl,
-            blockchainChainId: currentChainId
+            blockchainChainId: currentChainId,
+            onChainRegistered: true,
+            initialValidators: formData.initialValidators
           }
         }
       }
@@ -294,12 +513,26 @@ export default function CreateChainPage() {
       // Provide specific error messages
       let errorMessage = 'Failed to create chain'
       
-      if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
+      // Handle JSON-RPC errors
+      if (error.code === -32603 || error.error?.code === -32603) {
+        const rpcError = error.error || error
+        if (rpcError.message?.includes('execution reverted')) {
+          errorMessage = 'Transaction would revert. Please check your inputs and ensure the contract is properly configured.'
+        } else if (rpcError.message?.includes('insufficient funds')) {
+          errorMessage = 'Insufficient POL/MATIC balance. Please add funds to your wallet.'
+        } else {
+          errorMessage = `Transaction failed: ${rpcError.message || 'Internal JSON-RPC error. Please try again or check your network connection.'}`
+        }
+      } else if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
         errorMessage = `Cannot connect to backend server. Please ensure the backend server is running at ${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}`
       } else if (error.code === 4001) {
         errorMessage = 'Transaction rejected by user'
-      } else if (error.code === 'INSUFFICIENT_FUNDS') {
-        errorMessage = 'Insufficient MATIC balance. Please add funds to your wallet.'
+      } else if (error.code === 'INSUFFICIENT_FUNDS' || error.message?.includes('insufficient funds')) {
+        errorMessage = 'Insufficient POL/MATIC balance. Please add funds to your wallet.'
+      } else if (error.message?.includes('Transaction would fail')) {
+        errorMessage = error.message
+      } else if (error.reason) {
+        errorMessage = `Transaction failed: ${error.reason}`
       } else if (error.response) {
         // Server responded with error status
         if (error.response.status === 400) {
@@ -402,11 +635,18 @@ export default function CreateChainPage() {
                 name="rollupType"
                 value={formData.rollupType}
                 onChange={handleChange}
-                className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500"
+                className="w-full bg-slate-900/80 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 text-white appearance-none cursor-pointer"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 1rem center',
+                  paddingRight: '2.5rem',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)'
+                }}
               >
-                <option value="zk-rollup">zkRollup (Recommended)</option>
-                <option value="optimistic-rollup">Optimistic Rollup</option>
-                <option value="validium">Validium</option>
+                <option value="zk-rollup" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>zkRollup (Recommended)</option>
+                <option value="optimistic-rollup" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>Optimistic Rollup</option>
+                <option value="validium" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>Validium</option>
               </select>
             </div>
 

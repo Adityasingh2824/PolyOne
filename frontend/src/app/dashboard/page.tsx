@@ -21,28 +21,118 @@ import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import DashboardLayout from '@/components/DashboardLayout'
 import { useWallet } from '@/hooks/useWallet'
+import { ethers } from 'ethers'
+
+const CHAIN_FACTORY_ABI = [
+  "function getChain(uint256 _chainId) external view returns (uint256 id, address owner, string memory name, string memory chainType, string memory rollupType, string memory gasToken, uint256 validators, uint256 createdAt, bool isActive, string memory rpcUrl, string memory explorerUrl)",
+  "function getUserChains(address _user) external view returns (uint256[] memory)",
+  "function getTotalChains() external view returns (uint256)"
+]
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { address, isConnected, balance, disconnect } = useWallet()
+  const { address, isConnected, balance, disconnect, chainId } = useWallet()
   const [chains, setChains] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingOnChain, setLoadingOnChain] = useState(false)
 
   useEffect(() => {
     // Load chains from localStorage
     loadChains()
-  }, [router])
+    // Load chains from blockchain if wallet is connected
+    if (isConnected && address) {
+      loadChainsFromBlockchain()
+    }
+  }, [router, isConnected, address, chainId])
 
   const loadChains = () => {
-    setLoading(true)
     try {
       const storedChains = localStorage.getItem('userChains')
       if (storedChains) {
-        setChains(JSON.parse(storedChains))
+        const localChains = JSON.parse(storedChains)
+        setChains(localChains)
       }
     } catch (error) {
       console.error('Error loading chains:', error)
+    }
+  }
+
+  const loadChainsFromBlockchain = async () => {
+    if (!window.ethereum || !address) return
+    
+    const contractAddress = process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS
+    if (!contractAddress || !ethers.isAddress(contractAddress)) {
+      console.warn('ChainFactory contract address not configured')
+      return
+    }
+
+    // Only load from blockchain if on Polygon network
+    if (chainId !== 137 && chainId !== 80002) {
+      return
+    }
+
+    setLoadingOnChain(true)
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      const contract = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, provider)
+      
+      // Get user's chain IDs from blockchain
+      const chainIds = await contract.getUserChains(address)
+      
+      // Fetch details for each chain
+      const blockchainChains = await Promise.all(
+        chainIds.map(async (chainId: bigint) => {
+          try {
+            const chainData = await contract.getChain(chainId)
+            return {
+              id: `chain-${chainId.toString()}`,
+              chainId: chainId.toString(),
+              name: chainData.name,
+              chainType: chainData.chainType,
+              rollupType: chainData.rollupType,
+              gasToken: chainData.gasToken,
+              validators: chainData.validators.toString(),
+              owner: chainData.owner,
+              isActive: chainData.isActive,
+              rpcUrl: chainData.rpcUrl,
+              explorerUrl: chainData.explorerUrl,
+              createdAt: new Date(Number(chainData.createdAt) * 1000).toISOString(),
+              status: chainData.isActive ? 'active' : 'inactive',
+              onChainRegistered: true,
+              blockchainTxHash: null, // We don't have this from the contract
+              blockchainChainId: chainId
+            }
+          } catch (error) {
+            console.error(`Error fetching chain ${chainId}:`, error)
+            return null
+          }
+        })
+      )
+
+      // Filter out nulls and merge with local chains
+      const validBlockchainChains = blockchainChains.filter(c => c !== null)
+      
+      // Merge with local chains, prioritizing blockchain data
+      const localChains = JSON.parse(localStorage.getItem('userChains') || '[]')
+      const mergedChains = [...validBlockchainChains]
+      
+      // Add local chains that aren't on blockchain
+      localChains.forEach((localChain: any) => {
+        if (!localChain.onChainRegistered || !validBlockchainChains.find(bc => bc.id === localChain.id)) {
+          mergedChains.push({
+            ...localChain,
+            onChainRegistered: localChain.onChainRegistered || false
+          })
+        }
+      })
+
+      setChains(mergedChains)
+    } catch (error) {
+      console.error('Error loading chains from blockchain:', error)
+      // Fallback to local chains only
+      loadChains()
     } finally {
+      setLoadingOnChain(false)
       setLoading(false)
     }
   }
@@ -67,28 +157,28 @@ export default function DashboardPage() {
       value: chains.length,
       icon: <Globe className="w-5 h-5 sm:w-6 sm:h-6" />,
       gradient: 'from-purple-500 to-pink-500',
-      change: '+12%'
+      change: `${chains.filter(c => c.onChainRegistered).length} On-Chain`
     },
     {
       label: 'Active Chains',
-      value: chains.filter(c => c.status === 'active').length,
+      value: chains.filter(c => c.status === 'active' || c.isActive).length,
       icon: <Activity className="w-5 h-5 sm:w-6 sm:h-6" />,
       gradient: 'from-cyan-500 to-blue-500',
-      change: '+5%'
+      change: `${chains.filter(c => (c.status === 'active' || c.isActive) && c.onChainRegistered).length} On-Chain`
     },
     {
-      label: 'Total Transactions',
-      value: chains.reduce((acc, c) => acc + (c.transactions || 0), 0).toLocaleString(),
+      label: 'On-Chain Registered',
+      value: chains.filter(c => c.onChainRegistered).length,
       icon: <Zap className="w-5 h-5 sm:w-6 sm:h-6" />,
       gradient: 'from-green-500 to-emerald-500',
-      change: '+18%'
+      change: `${chains.filter(c => !c.onChainRegistered).length} Local Only`
     },
     {
-      label: 'Network Users',
-      value: '1.2K',
+      label: 'Total Validators',
+      value: chains.reduce((acc, c) => acc + (parseInt(c.validators || c.initialValidators || '0')), 0),
       icon: <Users className="w-5 h-5 sm:w-6 sm:h-6" />,
       gradient: 'from-orange-500 to-red-500',
-      change: '+24%'
+      change: `${chains.filter(c => c.onChainRegistered).reduce((acc, c) => acc + (parseInt(c.validators || '0')), 0)} On-Chain`
     }
   ]
 
@@ -208,33 +298,61 @@ export default function DashboardPage() {
             </motion.div>
           </Link>
 
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="bg-gradient-to-br from-cyan-500/20 to-blue-500/20 backdrop-blur-lg rounded-2xl p-6 sm:p-8 border border-cyan-500/30 hover:border-cyan-500/50 transition-all cursor-pointer group"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8" />
+          <Link href="/dashboard/analytics">
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="bg-gradient-to-br from-cyan-500/20 to-blue-500/20 backdrop-blur-lg rounded-2xl p-6 sm:p-8 border border-cyan-500/30 hover:border-cyan-500/50 transition-all cursor-pointer group"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8" />
+                </div>
+                <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 group-hover:translate-x-1 transition-transform" />
               </div>
-              <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400 group-hover:translate-x-1 transition-transform" />
-            </div>
-            <h3 className="text-lg sm:text-xl font-bold mb-2">View Analytics</h3>
-            <p className="text-xs sm:text-sm text-gray-400">Monitor your chains' performance and metrics</p>
-          </motion.div>
+              <h3 className="text-lg sm:text-xl font-bold mb-2">View Analytics</h3>
+              <p className="text-xs sm:text-sm text-gray-400">Monitor your chains' performance and metrics</p>
+            </motion.div>
+          </Link>
         </div>
 
         {/* Your Chains */}
         <div>
           <div className="flex items-center justify-between mb-4 sm:mb-6">
             <h2 className="text-xl sm:text-2xl font-bold">Your Blockchains</h2>
-            <Link 
-              href="/dashboard/create"
-              className="text-purple-400 hover:text-purple-300 flex items-center gap-2 text-sm sm:text-base transition-colors"
-            >
-              Create New
-              <Plus className="w-4 h-4" />
-            </Link>
+            <div className="flex items-center gap-2">
+              {loadingOnChain && (
+                <div className="text-xs text-gray-400 flex items-center gap-2">
+                  <motion.div
+                    className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  />
+                  Loading from blockchain...
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  if (isConnected && address) {
+                    loadChainsFromBlockchain()
+                  } else {
+                    loadChains()
+                  }
+                }}
+                className="text-purple-400 hover:text-purple-300 flex items-center gap-2 text-sm sm:text-base transition-colors"
+                disabled={loadingOnChain}
+              >
+                <Activity className="w-4 h-4" />
+                Refresh
+              </button>
+              <Link 
+                href="/dashboard/create"
+                className="text-purple-400 hover:text-purple-300 flex items-center gap-2 text-sm sm:text-base transition-colors"
+              >
+                Create New
+                <Plus className="w-4 h-4" />
+              </Link>
+            </div>
           </div>
 
           {loading ? (
@@ -281,10 +399,22 @@ export default function DashboardPage() {
                         <Globe className="w-6 h-6 sm:w-8 sm:h-8" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <Link href={`/dashboard/chains/${chain.id}`}>
-                          <h3 className="text-base sm:text-lg font-bold mb-1 hover:text-purple-400 transition-colors">{chain.name}</h3>
-                        </Link>
-                        <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-400">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Link href={`/dashboard/chains/${chain.id}`}>
+                            <h3 className="text-base sm:text-lg font-bold hover:text-purple-400 transition-colors">{chain.name}</h3>
+                          </Link>
+                          {chain.onChainRegistered && (
+                            <span className="px-2 py-0.5 rounded-md bg-green-500/20 text-green-400 text-xs font-semibold">
+                              ✓ On-Chain
+                            </span>
+                          )}
+                          {!chain.onChainRegistered && (
+                            <span className="px-2 py-0.5 rounded-md bg-yellow-500/20 text-yellow-400 text-xs font-semibold">
+                              Local Only
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-400 mb-2">
                           <span className="px-2 py-1 rounded-md bg-purple-500/20 text-purple-400 capitalize">
                             {chain.chainType}
                           </span>
@@ -294,7 +424,31 @@ export default function DashboardPage() {
                           <span className="hidden sm:inline">•</span>
                           <span className="hidden sm:inline">{chain.gasToken} Gas Token</span>
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                          <div className="text-xs">
+                            <span className="text-gray-500">Validators:</span>
+                            <span className="text-white ml-1 font-semibold">{chain.validators || chain.initialValidators || 'N/A'}</span>
+                          </div>
+                          <div className="text-xs">
+                            <span className="text-gray-500">Status:</span>
+                            <span className={`ml-1 font-semibold ${chain.status === 'active' || chain.isActive ? 'text-green-400' : 'text-gray-400'}`}>
+                              {chain.status === 'active' || chain.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          {chain.transactions !== undefined && (
+                            <div className="text-xs">
+                              <span className="text-gray-500">TXs:</span>
+                              <span className="text-white ml-1 font-semibold">{chain.transactions || 0}</span>
+                            </div>
+                          )}
+                          {chain.blockchainTxHash && (
+                            <div className="text-xs">
+                              <span className="text-gray-500">TX Hash:</span>
+                              <span className="text-purple-400 ml-1 font-mono truncate">{chain.blockchainTxHash.slice(0, 8)}...</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">
                           Created {new Date(chain.createdAt).toLocaleDateString()}
                         </div>
                       </div>
