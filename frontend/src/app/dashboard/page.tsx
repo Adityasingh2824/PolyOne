@@ -112,13 +112,39 @@ export default function DashboardPage() {
       // Filter out nulls and merge with local chains
       const validBlockchainChains = blockchainChains.filter(c => c !== null)
       
-      // Merge with local chains, prioritizing blockchain data
+      // Merge with local chains, prioritizing blockchain data but preserving local metadata
       const localChains = JSON.parse(localStorage.getItem('userChains') || '[]')
-      const mergedChains = [...validBlockchainChains]
+      const mergedChains = validBlockchainChains.map((blockchainChain: any) => {
+        // Find matching local chain to preserve metadata like polygonScanUrl and blockchainTxHash
+        const matchingLocalChain = localChains.find((lc: any) => {
+          const lcId = String(lc.id || '')
+          const bcId = String(blockchainChain.id || '')
+          return lcId === bcId || 
+                 lcId === `chain-${blockchainChain.blockchainChainId?.toString()}` ||
+                 lc.blockchainChainId?.toString() === blockchainChain.blockchainChainId?.toString()
+        })
+        
+        if (matchingLocalChain) {
+          // Merge blockchain data with local metadata
+          return {
+            ...blockchainChain,
+            polygonScanUrl: matchingLocalChain.polygonScanUrl || blockchainChain.polygonScanUrl,
+            blockchainTxHash: matchingLocalChain.blockchainTxHash || blockchainChain.blockchainTxHash,
+            transactions: matchingLocalChain.transactions || blockchainChain.transactions
+          }
+        }
+        return blockchainChain
+      })
       
       // Add local chains that aren't on blockchain
       localChains.forEach((localChain: any) => {
-        if (!localChain.onChainRegistered || !validBlockchainChains.find(bc => bc.id === localChain.id)) {
+        if (!localChain.onChainRegistered || !validBlockchainChains.find(bc => {
+          const bcId = String(bc.id || '')
+          const lcId = String(localChain.id || '')
+          return bcId === lcId || 
+                 bcId === `chain-${localChain.blockchainChainId?.toString()}` ||
+                 bc.blockchainChainId?.toString() === localChain.blockchainChainId?.toString()
+        })) {
           mergedChains.push({
             ...localChain,
             onChainRegistered: localChain.onChainRegistered || false
@@ -149,6 +175,53 @@ export default function DashboardPage() {
     toast.success('Copied to clipboard!', {
       icon: '📋',
     })
+  }
+
+  const getPolygonScanUrl = (txHash: string) => {
+    if (chainId === 137) {
+      return `https://polygonscan.com/tx/${txHash}`
+    } else if (chainId === 80002) {
+      return `https://amoy.polygonscan.com/tx/${txHash}`
+    }
+    return null
+  }
+
+  const handleExternalLink = (chain: any, e: React.MouseEvent) => {
+    e.stopPropagation()
+    
+    // If chain has a polygonScanUrl, use it
+    if (chain.polygonScanUrl) {
+      window.open(chain.polygonScanUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
+    
+    // If chain has a blockchainTxHash, construct the Polyscan URL
+    if (chain.blockchainTxHash) {
+      const scanUrl = getPolygonScanUrl(chain.blockchainTxHash)
+      if (scanUrl) {
+        window.open(scanUrl, '_blank', 'noopener,noreferrer')
+        return
+      }
+    }
+    
+    // If chain has an explorerUrl, use it
+    if (chain.explorerUrl) {
+      window.open(chain.explorerUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
+    
+    // If chain has a blockchainChainId, try to construct a Polyscan chain ID URL
+    if (chain.blockchainChainId) {
+      const chainIdNum = typeof chain.blockchainChainId === 'bigint' 
+        ? Number(chain.blockchainChainId) 
+        : parseInt(chain.blockchainChainId)
+      
+      if (chainId === 137) {
+        window.open(`https://polygonscan.com/address/${chainIdNum}`, '_blank', 'noopener,noreferrer')
+      } else if (chainId === 80002) {
+        window.open(`https://amoy.polygonscan.com/address/${chainIdNum}`, '_blank', 'noopener,noreferrer')
+      }
+    }
   }
 
   const stats = [
@@ -429,6 +502,10 @@ export default function DashboardPage() {
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
                           <div className="text-xs">
+                            <span className="text-gray-500">Chain ID:</span>
+                            <span className="text-white ml-1 font-semibold">{chain.chainId || 'N/A'}</span>
+                          </div>
+                          <div className="text-xs">
                             <span className="text-gray-500">Validators:</span>
                             <span className="text-white ml-1 font-semibold">{chain.validators || chain.initialValidators || 'N/A'}</span>
                           </div>
@@ -444,12 +521,6 @@ export default function DashboardPage() {
                               <span className="text-white ml-1 font-semibold">{chain.transactions || 0}</span>
                             </div>
                           )}
-                          {chain.blockchainTxHash && (
-                            <div className="text-xs">
-                              <span className="text-gray-500">TX Hash:</span>
-                              <span className="text-purple-400 ml-1 font-mono truncate">{chain.blockchainTxHash.slice(0, 8)}...</span>
-                            </div>
-                          )}
                         </div>
                         <div className="text-xs text-gray-500">
                           Created {new Date(chain.createdAt).toLocaleDateString()}
@@ -457,18 +528,28 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 self-end sm:self-center">
-                      <Link href={`/dashboard/chains/${encodeURIComponent(String(chain.id || ''))}`}>
+                      <Link 
+                        href={`/dashboard/chains/${encodeURIComponent(String(chain.id || ''))}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <button className="px-3 sm:px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all text-xs sm:text-sm">
                           <Activity className="w-4 h-4" />
                         </button>
                       </Link>
                       <button
-                        onClick={() => copyToClipboard(chain.rpcUrl || 'https://rpc.example.com')}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          copyToClipboard(chain.rpcUrl || 'https://rpc.example.com')
+                        }}
                         className="px-3 sm:px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all text-xs sm:text-sm"
                       >
                         <Copy className="w-4 h-4" />
                       </button>
-                      <button className="px-3 sm:px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all text-xs sm:text-sm">
+                      <button 
+                        onClick={(e) => handleExternalLink(chain, e)}
+                        className="px-3 sm:px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all text-xs sm:text-sm"
+                        disabled={!chain.polygonScanUrl && !chain.blockchainTxHash && !chain.explorerUrl && !chain.blockchainChainId}
+                      >
                         <ExternalLink className="w-4 h-4" />
                       </button>
                     </div>
