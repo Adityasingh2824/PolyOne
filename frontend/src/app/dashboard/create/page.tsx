@@ -3,22 +3,26 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Rocket, Info } from 'lucide-react'
+import { ArrowLeft, Rocket, Info, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 import DashboardLayout from '@/components/DashboardLayout'
 import { useWallet } from '@/hooks/useWallet'
 import { ethers } from 'ethers'
+import { web3Service, NETWORKS } from '@/lib/web3'
 
 const CHAIN_FACTORY_ABI = [
-  "function createChain(string memory _name, string memory _chainType, string memory _rollupType, string memory _gasToken, uint256 _validators, string memory _rpcUrl, string memory _explorerUrl) external returns (uint256)"
+  "function createChain(string memory _name, string memory _chainType, string memory _rollupType, string memory _gasToken, uint256 _validators, string memory _rpcUrl, string memory _explorerUrl) external returns (uint256)",
+  "event ChainCreated(uint256 indexed chainId, address indexed owner, string name, string chainType, string rollupType)"
 ]
 
 export default function CreateChainPage() {
   const router = useRouter()
-  const { address, isConnected } = useWallet()
+  const { address, isConnected, chainId } = useWallet()
   const [loading, setLoading] = useState(false)
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [polygonScanUrl, setPolygonScanUrl] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     chainType: 'public',
@@ -32,6 +36,17 @@ export default function CreateChainPage() {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
+  // Check if user is on Polygon network
+  const isPolygonNetwork = chainId === 137 || chainId === 80002 // Polygon Mainnet or Amoy Testnet
+  const getPolygonScanUrl = (txHash: string) => {
+    if (chainId === 137) {
+      return `https://polygonscan.com/tx/${txHash}`
+    } else if (chainId === 80002) {
+      return `https://amoy.polygonscan.com/tx/${txHash}`
+    }
+    return null
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -40,66 +55,241 @@ export default function CreateChainPage() {
       return
     }
 
-    setLoading(true)
+    // Validate form data
+    if (!formData.name || !formData.gasToken) {
+      toast.error('Please fill in all required fields')
+      return
+    }
 
-    try {
-      // Create chain data
-      const chainData = {
-        ...formData,
-        id: Date.now().toString(),
-        owner: address,
-        status: 'active',
-        transactions: Math.floor(Math.random() * 10000),
-        rpcUrl: `https://rpc-${Date.now()}.polyone.io`,
-        explorerUrl: `https://explorer-${Date.now()}.polyone.io`,
-        createdAt: new Date().toISOString()
-      }
+    // Check if contract address is configured
+    const contractAddress = process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS
+    if (!contractAddress) {
+      // Warn but allow continuation (chain will still be created on backend)
+      toast.error('Chain Factory contract not configured. On-chain registration will be skipped. Please set NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS to enable blockchain registration.', {
+        duration: 6000
+      })
+      // Continue with backend-only deployment
+      // Skip blockchain registration and proceed directly to backend
+      setLoading(true)
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
-      // Save to localStorage
-      const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
-      existingChains.push(chainData)
-      localStorage.setItem('userChains', JSON.stringify(existingChains))
+        const response = await axios.post(
+          `${apiUrl}/api/chains/create`,
+          {
+            name: formData.name,
+            chainType: formData.chainType,
+            rollupType: formData.rollupType,
+            gasToken: formData.gasToken,
+            validatorAccess: formData.validatorAccess,
+            initialValidators: formData.initialValidators,
+            walletAddress: address
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 30000
+          }
+        )
 
-      // Try blockchain if contract address exists
-      const contractAddress = process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS
-      if (contractAddress && window.ethereum) {
-        try {
-          const provider = new ethers.BrowserProvider(window.ethereum)
-          const signer = await provider.getSigner()
-          const contract = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, signer)
-
-          const tx = await contract.createChain(
-            formData.name,
-            formData.chainType,
-            formData.rollupType,
-            formData.gasToken.toUpperCase(),
-            parseInt(formData.initialValidators),
-            chainData.rpcUrl,
-            chainData.explorerUrl
-          )
-
-          toast.success('🚀 Transaction sent! Waiting for confirmation...')
-          await tx.wait()
-          toast.success('✅ Chain created on blockchain!')
-        } catch (blockchainError) {
-          console.log('Blockchain creation skipped:', blockchainError)
-          toast.success('✅ Chain created locally!')
+        const chainData = {
+          ...response.data.chain,
+          id: response.data.chainId,
+          owner: address,
+          createdAt: new Date().toISOString()
         }
-      } else {
-        toast.success('✅ Chain created successfully!', {
+
+        const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
+        existingChains.push(chainData)
+        localStorage.setItem('userChains', JSON.stringify(existingChains))
+
+        toast.success('✅ Chain deployment started!', {
+          duration: 5000,
           style: {
             background: 'linear-gradient(135deg, #a855f7, #ec4899)',
             color: 'white',
           },
         })
+
+        setTimeout(() => {
+          router.push('/dashboard')
+        }, 2000)
+      } catch (error: any) {
+        console.error('Error creating chain:', error)
+        toast.error('Failed to create chain: ' + (error.response?.data?.message || error.message))
+      } finally {
+        setLoading(false)
       }
+      return
+    }
+
+    // Ensure user is on Polygon network
+    let currentChainId = chainId
+    if (!isPolygonNetwork) {
+      try {
+        toast.loading('Switching to Polygon network...', { id: 'network-switch' })
+        await web3Service.switchToPolygon('POLYGON_AMOY') // Default to testnet, can be changed to mainnet
+        // Wait a moment for the network to update
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        // Get updated chainId from provider
+        if (window.ethereum) {
+          const provider = new ethers.BrowserProvider(window.ethereum)
+          const network = await provider.getNetwork()
+          currentChainId = Number(network.chainId)
+        }
+        toast.success('Switched to Polygon network!', { id: 'network-switch' })
+      } catch (networkError: any) {
+        toast.error(`Failed to switch network: ${networkError.message}`, { id: 'network-switch' })
+        return
+      }
+    }
+
+    setLoading(true)
+    setTxHash(null)
+    setPolygonScanUrl(null)
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
+      // Step 1: Create chain on blockchain first (REQUIRED)
+      if (!window.ethereum) {
+        throw new Error('MetaMask is required for on-chain registration')
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      const signer = await provider.getSigner()
+      const contract = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, signer)
+
+      // Generate temporary URLs (will be updated after backend deployment)
+      const tempChainId = `temp-${Date.now()}`
+      const tempRpcUrl = `https://rpc-${tempChainId.substring(0, 8)}.polyone.io`
+      const tempExplorerUrl = `https://explorer-${tempChainId.substring(0, 8)}.polyone.io`
+
+      toast.loading('📝 Creating chain on Polygon blockchain...', { id: 'blockchain-tx' })
+      
+      const tx = await contract.createChain(
+        formData.name,
+        formData.chainType,
+        formData.rollupType,
+        formData.gasToken.toUpperCase(),
+        parseInt(formData.initialValidators),
+        tempRpcUrl,
+        tempExplorerUrl
+      )
+
+      const txHashValue = tx.hash
+      setTxHash(txHashValue)
+      // Use currentChainId instead of chainId for the scan URL
+      const scanUrl = currentChainId === 137 
+        ? `https://polygonscan.com/tx/${txHashValue}`
+        : currentChainId === 80002
+        ? `https://amoy.polygonscan.com/tx/${txHashValue}`
+        : null
+      setPolygonScanUrl(scanUrl)
+
+      toast.loading('⏳ Waiting for transaction confirmation...', { id: 'blockchain-tx' })
+      
+      const receipt = await tx.wait()
+      
+      toast.success('✅ Chain registered on Polygon blockchain!', { 
+        id: 'blockchain-tx',
+        duration: 3000
+      })
+
+      // Step 2: Call backend API to create chain infrastructure
+      toast.loading('🚀 Starting chain deployment...', { id: 'backend-deploy' })
+
+      // Check backend connectivity first (non-blocking)
+      try {
+        const healthCheck = await axios.get(`${apiUrl}/health`, {
+          timeout: 5000
+        })
+        console.log('Backend health check:', healthCheck.data)
+      } catch (healthError: any) {
+        console.warn('Backend health check failed (will still attempt request):', healthError)
+      }
+
+      // Call backend API to create chain
+      const response = await axios.post(
+        `${apiUrl}/api/chains/create`,
+        {
+          name: formData.name,
+          chainType: formData.chainType,
+          rollupType: formData.rollupType,
+          gasToken: formData.gasToken,
+          validatorAccess: formData.validatorAccess,
+          initialValidators: formData.initialValidators,
+          blockchainTxHash: txHashValue, // Include transaction hash
+          blockchainChainId: currentChainId,
+          walletAddress: address
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000 // 30 second timeout
+        }
+      )
+
+      const chainData = {
+        ...response.data.chain,
+        id: response.data.chainId,
+        owner: address,
+        createdAt: new Date().toISOString(),
+        blockchainTxHash: txHashValue,
+        polygonScanUrl: scanUrl
+      }
+
+      // Save to localStorage for frontend display
+      const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
+      existingChains.push(chainData)
+      localStorage.setItem('userChains', JSON.stringify(existingChains))
+
+      toast.success('✅ Chain deployment started!', { 
+        id: 'backend-deploy',
+        duration: 5000,
+        style: {
+          background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+          color: 'white',
+        },
+      })
 
       setTimeout(() => {
         router.push('/dashboard')
-      }, 1000)
+      }, 2000)
     } catch (error: any) {
-      console.error('Error:', error)
-      toast.error(error.message || 'Failed to create chain')
+      console.error('Error creating chain:', error)
+      
+      // Provide specific error messages
+      let errorMessage = 'Failed to create chain'
+      
+      if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
+        errorMessage = `Cannot connect to backend server. Please ensure the backend server is running at ${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}`
+      } else if (error.code === 4001) {
+        errorMessage = 'Transaction rejected by user'
+      } else if (error.code === 'INSUFFICIENT_FUNDS') {
+        errorMessage = 'Insufficient MATIC balance. Please add funds to your wallet.'
+      } else if (error.response) {
+        // Server responded with error status
+        if (error.response.status === 400) {
+          errorMessage = error.response.data?.message || 'Invalid request. Please check your input.'
+        } else if (error.response.status === 500) {
+          errorMessage = 'Server error. Please try again later.'
+        } else {
+          errorMessage = error.response.data?.message || `Server error (${error.response.status})`
+        }
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+      
+      toast.error(errorMessage, {
+        duration: 5000,
+        style: {
+          background: '#ef4444',
+          color: 'white',
+        },
+      })
     } finally {
       setLoading(false)
     }
@@ -217,6 +407,43 @@ export default function CreateChainPage() {
                 required
               />
             </div>
+
+            {!isPolygonNetwork && isConnected && (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex items-start gap-3">
+                <Info className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-bold text-yellow-400 mb-1">Switch to Polygon Network</h3>
+                  <p className="text-sm text-gray-300">
+                    You need to be on Polygon Mainnet or Polygon Amoy Testnet to launch your chain. 
+                    The network will be switched automatically when you submit.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {txHash && polygonScanUrl && (
+              <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <h3 className="font-bold text-green-400">Transaction Submitted!</h3>
+                </div>
+                <p className="text-sm text-gray-300 mb-3">
+                  Your chain has been registered on Polygon blockchain. View it on PolygonScan:
+                </p>
+                <a
+                  href={polygonScanUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-green-400 hover:text-green-300 transition-colors text-sm font-medium"
+                >
+                  View on PolygonScan
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+                <p className="text-xs text-gray-400 mt-2 font-mono break-all">
+                  {txHash}
+                </p>
+              </div>
+            )}
 
             <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-6">
               <h3 className="font-bold mb-4">Estimated Costs</h3>

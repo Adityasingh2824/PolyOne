@@ -27,20 +27,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { address, isConnected, disconnect } = useWallet()
-  const [user, setUser] = useState<any>(null)
 
-  useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (userData) {
-      setUser(JSON.parse(userData))
+  const handleDisconnect = () => {
+    if (isConnected) {
+      disconnect()
     }
-  }, [])
-
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    disconnect()
-    router.push('/')
   }
 
   const navigation = [
@@ -72,7 +63,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="p-6 border-b border-white/10">
-            <Link href="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
               <Terminal className="w-5 h-5" />
               <span className="font-bold">PolyOne Labs</span>
             </Link>
@@ -103,7 +94,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             })}
           </nav>
 
-          {/* User section */}
+          {/* Wallet section */}
           <div className="p-4 border-t border-white/10">
             {isConnected && address && (
               <div className="border border-white/10 p-4 mb-3">
@@ -113,7 +104,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-sm truncate">
-                      {user?.name || 'User'}
+                      Connected Wallet
                     </div>
                     <div className="text-xs text-white/40 truncate font-mono">
                       {address.slice(0, 6)}...{address.slice(-4)}
@@ -121,11 +112,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </div>
                 </div>
                 <button
-                  onClick={handleLogout}
+                  onClick={handleDisconnect}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-white/20 hover:bg-white hover:text-black transition-all text-sm"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span>Logout</span>
+                  <span>Disconnect</span>
                 </button>
               </div>
             )}
@@ -138,10 +129,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* Mobile header */}
         <header className="lg:hidden fixed top-0 left-0 right-0 z-30 bg-black border-b border-white/10">
           <div className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-2">
+            <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
               <Terminal className="w-5 h-5" />
               <span className="font-bold">PolyOne Labs</span>
-            </div>
+            </Link>
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 hover:bg-white/5 transition-all"

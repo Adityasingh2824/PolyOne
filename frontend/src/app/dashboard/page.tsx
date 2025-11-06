@@ -27,23 +27,8 @@ export default function DashboardPage() {
   const { address, isConnected, balance, disconnect } = useWallet()
   const [chains, setChains] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
-    // Check authentication
-    const isAuth = localStorage.getItem('isAuthenticated')
-    const userData = localStorage.getItem('user')
-    
-    if (!isAuth) {
-      toast.error('Please login first')
-      router.push('/auth/login')
-      return
-    }
-
-    if (userData) {
-      setUser(JSON.parse(userData))
-    }
-
     // Load chains from localStorage
     loadChains()
   }, [router])
@@ -62,14 +47,11 @@ export default function DashboardPage() {
     }
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('isAuthenticated')
-    localStorage.removeItem('user')
+  const handleDisconnect = () => {
     if (isConnected) {
       disconnect()
+      toast.success('Wallet disconnected')
     }
-    toast.success('Logged out successfully')
-    router.push('/')
   }
 
   const copyToClipboard = (text: string) => {
@@ -110,19 +92,6 @@ export default function DashboardPage() {
     }
   ]
 
-  if (!user) {
-    return (
-      <DashboardLayout>
-        <div className="min-h-[80vh] flex items-center justify-center">
-          <motion.div
-            className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          />
-        </div>
-      </DashboardLayout>
-    )
-  }
 
   return (
     <DashboardLayout>
@@ -131,19 +100,21 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2">
-              Welcome back, <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">{user.name}</span>
+              Welcome to <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">PolyOne Labs</span>
             </h1>
-            <p className="text-sm sm:text-base text-gray-400">{user.company} • {user.email}</p>
+            <p className="text-sm sm:text-base text-gray-400">Manage your blockchain networks</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all flex items-center gap-2 text-sm"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
-          </div>
+          {isConnected && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleDisconnect}
+                className="px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all flex items-center gap-2 text-sm"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Disconnect</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Wallet Status */}
@@ -301,7 +272,8 @@ export default function DashboardPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1 }}
-                  className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-4 sm:p-6 border border-white/10 hover:border-purple-500/50 transition-all group"
+                  className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-4 sm:p-6 border border-white/10 hover:border-purple-500/50 transition-all group cursor-pointer"
+                  onClick={() => router.push(`/dashboard/chains/${chain.id}`)}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-start gap-4">
@@ -309,7 +281,9 @@ export default function DashboardPage() {
                         <Globe className="w-6 h-6 sm:w-8 sm:h-8" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-base sm:text-lg font-bold mb-1">{chain.name}</h3>
+                        <Link href={`/dashboard/chains/${chain.id}`}>
+                          <h3 className="text-base sm:text-lg font-bold mb-1 hover:text-purple-400 transition-colors">{chain.name}</h3>
+                        </Link>
                         <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-400">
                           <span className="px-2 py-1 rounded-md bg-purple-500/20 text-purple-400 capitalize">
                             {chain.chainType}
@@ -326,6 +300,11 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 self-end sm:self-center">
+                      <Link href={`/dashboard/chains/${chain.id}`}>
+                        <button className="px-3 sm:px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all text-xs sm:text-sm">
+                          <Activity className="w-4 h-4" />
+                        </button>
+                      </Link>
                       <button
                         onClick={() => copyToClipboard(chain.rpcUrl || 'https://rpc.example.com')}
                         className="px-3 sm:px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all text-xs sm:text-sm"

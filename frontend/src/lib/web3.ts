@@ -51,17 +51,26 @@ export const NETWORKS = {
 export class Web3Service {
   private provider: ethers.BrowserProvider | null = null
   private signer: ethers.Signer | null = null
+  private walletType: string = 'unknown'
 
   async connectWallet(): Promise<{ address: string; chainId: number }> {
+    // Only support MetaMask
     if (typeof window.ethereum === 'undefined') {
-      throw new Error('Please install MetaMask to use this dApp')
+      throw new Error('MetaMask is not installed. Please install MetaMask to use this dApp.')
     }
+
+    if (!window.ethereum.isMetaMask) {
+      throw new Error('Please use MetaMask wallet. Other wallets are not supported.')
+    }
+
+    const ethereumProvider = window.ethereum
+    this.walletType = 'metamask'
 
     try {
       // Request account access
-      await window.ethereum.request({ method: 'eth_requestAccounts' })
+      await ethereumProvider.request({ method: 'eth_requestAccounts' })
       
-      this.provider = new ethers.BrowserProvider(window.ethereum)
+      this.provider = new ethers.BrowserProvider(ethereumProvider)
       this.signer = await this.provider.getSigner()
       
       const address = await this.signer.getAddress()
@@ -72,19 +81,33 @@ export class Web3Service {
         chainId: Number(network.chainId)
       }
     } catch (error: any) {
+      if (error.code === 4001) {
+        throw new Error('Wallet connection rejected by user')
+      }
       throw new Error(`Failed to connect wallet: ${error.message}`)
     }
   }
 
   async switchToPolygon(network: keyof typeof NETWORKS = 'POLYGON_AMOY'): Promise<void> {
-    if (!window.ethereum) {
-      throw new Error('MetaMask not found')
+    // Get the provider we're using (could be any injected wallet)
+    let ethereumProvider: any = null
+    
+    if (this.provider) {
+      // Get the underlying provider
+      const provider = this.provider as any
+      ethereumProvider = provider.provider || window.ethereum
+    } else if (typeof window.ethereum !== 'undefined') {
+      ethereumProvider = window.ethereum
+    }
+
+    if (!ethereumProvider) {
+      throw new Error('No wallet provider found')
     }
 
     const networkConfig = NETWORKS[network]
 
     try {
-      await window.ethereum.request({
+      await ethereumProvider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: networkConfig.chainId }]
       })
@@ -92,7 +115,7 @@ export class Web3Service {
       // Chain not added, add it
       if (error.code === 4902) {
         try {
-          await window.ethereum.request({
+          await ethereumProvider.request({
             method: 'wallet_addEthereumChain',
             params: [networkConfig]
           })
@@ -103,6 +126,10 @@ export class Web3Service {
         throw error
       }
     }
+  }
+
+  getWalletType(): string {
+    return this.walletType
   }
 
   async getBalance(address: string): Promise<string> {
@@ -163,7 +190,12 @@ export const web3Service = new Web3Service()
 // Type declarations for window.ethereum
 declare global {
   interface Window {
-    ethereum?: any
+    ethereum?: {
+      isMetaMask?: boolean
+      request: (args: { method: string; params?: any[] }) => Promise<any>
+      on: (event: string, handler: (...args: any[]) => void) => void
+      removeListener: (event: string, handler: (...args: any[]) => void) => void
+    }
   }
 }
 

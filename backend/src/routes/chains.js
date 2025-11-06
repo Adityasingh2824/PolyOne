@@ -70,7 +70,7 @@ router.get('/:id', authenticate, async (req, res) => {
 // Create new chain
 router.post('/create', authenticate, async (req, res) => {
   try {
-    const { name, chainType, rollupType, gasToken, validatorAccess, initialValidators } = req.body;
+    const { name, chainType, rollupType, gasToken, validatorAccess, initialValidators, blockchainTxHash, blockchainChainId } = req.body;
 
     // Validation
     if (!name || !chainType || !rollupType || !gasToken) {
@@ -78,6 +78,17 @@ router.post('/create', authenticate, async (req, res) => {
     }
 
     const chainId = uuidv4();
+    
+    // Determine PolygonScan URL based on chain ID
+    let polygonScanUrl = null;
+    if (blockchainTxHash) {
+      if (blockchainChainId === 137) {
+        polygonScanUrl = `https://polygonscan.com/tx/${blockchainTxHash}`;
+      } else if (blockchainChainId === 80002) {
+        polygonScanUrl = `https://amoy.polygonscan.com/tx/${blockchainTxHash}`;
+      }
+    }
+
     const chain = {
       id: chainId,
       userId: req.userId,
@@ -94,18 +105,27 @@ router.post('/create', authenticate, async (req, res) => {
       createdAt: new Date().toISOString(),
       rpcUrl: `https://rpc-${chainId.substring(0, 8)}.polyone.io`,
       explorerUrl: `https://explorer-${chainId.substring(0, 8)}.polyone.io`,
-      chainId: Math.floor(Math.random() * 1000000) + 100000
+      chainId: Math.floor(Math.random() * 1000000) + 100000,
+      blockchainTxHash: blockchainTxHash || null,
+      blockchainChainId: blockchainChainId || null,
+      polygonScanUrl: polygonScanUrl || null
     };
 
     chains.set(chainId, chain);
 
     // Start deployment process (async)
-    deployChain(chainId, chain).then(() => {
+    deployChain(chainId, chain).then((result) => {
       const updatedChain = chains.get(chainId);
-      if (updatedChain) {
+      if (updatedChain && result.success) {
         updatedChain.status = 'active';
         updatedChain.uptime = 99.9;
         updatedChain.tps = Math.floor(Math.random() * 500) + 500;
+        updatedChain.rpcUrl = result.endpoints.rpc;
+        updatedChain.explorerUrl = result.endpoints.explorer;
+        updatedChain.bridgeUrl = result.endpoints.bridge;
+        updatedChain.agglayerChainId = result.agglayerChainId;
+        updatedChain.validatorKeys = result.validatorKeys;
+        updatedChain.deployedAt = new Date().toISOString();
         chains.set(chainId, updatedChain);
       }
     }).catch(error => {
@@ -113,6 +133,7 @@ router.post('/create', authenticate, async (req, res) => {
       const updatedChain = chains.get(chainId);
       if (updatedChain) {
         updatedChain.status = 'failed';
+        updatedChain.error = error.message;
         chains.set(chainId, updatedChain);
       }
     });
@@ -169,6 +190,41 @@ router.delete('/:id', authenticate, async (req, res) => {
     res.json({ message: 'Chain deleted successfully' });
   } catch (error) {
     console.error('Error deleting chain:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get chain deployment status
+router.get('/:id/status', authenticate, async (req, res) => {
+  try {
+    const { getDeploymentStatus } = require('../services/chainDeployment');
+    const { getAggLayerStatus } = require('../services/agglayer');
+    
+    const chain = chains.get(req.params.id);
+    
+    if (!chain) {
+      return res.status(404).json({ message: 'Chain not found' });
+    }
+
+    if (chain.userId !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Get deployment status
+    const deploymentStatus = await getDeploymentStatus(req.params.id);
+    
+    // Get AggLayer status
+    const agglayerStatus = await getAggLayerStatus(req.params.id);
+
+    res.json({
+      chainId: req.params.id,
+      status: chain.status,
+      deployment: deploymentStatus,
+      agglayer: agglayerStatus,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error getting chain status:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

@@ -8,6 +8,7 @@ interface WalletState {
   isConnected: boolean
   isConnecting: boolean
   error: string | null
+  walletType: string | null
 }
 
 export function useWallet() {
@@ -17,7 +18,8 @@ export function useWallet() {
     balance: null,
     isConnected: false,
     isConnecting: false,
-    error: null
+    error: null,
+    walletType: null
   })
 
   const connect = useCallback(async () => {
@@ -33,18 +35,21 @@ export function useWallet() {
         balance,
         isConnected: true,
         isConnecting: false,
-        error: null
+        error: null,
+        walletType: 'metamask'
       })
 
       // Save to localStorage
       localStorage.setItem('walletConnected', 'true')
       localStorage.setItem('walletAddress', address)
+      localStorage.setItem('walletType', 'metamask')
     } catch (error: any) {
       setState(prev => ({
         ...prev,
         isConnecting: false,
         error: error.message
       }))
+      throw error // Re-throw so caller can handle it
     }
   }, [])
 
@@ -55,11 +60,13 @@ export function useWallet() {
       balance: null,
       isConnected: false,
       isConnecting: false,
-      error: null
+      error: null,
+      walletType: null
     })
     
     localStorage.removeItem('walletConnected')
     localStorage.removeItem('walletAddress')
+    localStorage.removeItem('walletType')
   }, [])
 
   const refreshBalance = useCallback(async () => {

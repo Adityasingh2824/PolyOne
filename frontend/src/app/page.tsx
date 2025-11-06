@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { 
@@ -17,9 +17,29 @@ import {
   ExternalLink
 } from 'lucide-react'
 import { useWallet } from '@/hooks/useWallet'
+import toast from 'react-hot-toast'
 
 export default function Home() {
   const { connect, address, isConnected, isConnecting } = useWallet()
+
+  const handleConnect = async () => {
+    try {
+      await connect()
+      toast.success('MetaMask connected successfully!')
+    } catch (error: any) {
+      if (error.message?.includes('not installed')) {
+        toast.error('MetaMask is not installed. Please install MetaMask to continue.', {
+          duration: 5000,
+          action: {
+            label: 'Install',
+            onClick: () => window.open('https://metamask.io/download/', '_blank')
+          }
+        })
+      } else {
+        toast.error(error.message || 'Failed to connect MetaMask')
+      }
+    }
+  }
   const { scrollYProgress } = useScroll()
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '50%'])
 
@@ -90,9 +110,9 @@ export default function Home() {
               </div>
             ) : (
               <button
-                onClick={connect}
+                onClick={handleConnect}
                 disabled={isConnecting}
-                className="px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all transform hover:scale-105"
+                className="px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isConnecting ? 'Connecting...' : 'Connect Wallet'}
               </button>
@@ -169,7 +189,7 @@ export default function Home() {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
               <Link 
-                href="/auth/signup"
+                href="/dashboard"
                 className="group px-8 py-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all transform hover:scale-105 flex items-center gap-2"
               >
                 Start using PolyOne
@@ -399,7 +419,7 @@ export default function Home() {
               there's room for you to contribute to PolyOne
             </p>
             <Link 
-              href="/auth/signup"
+              href="/dashboard"
               className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all transform hover:scale-105"
             >
               Start Building Now
