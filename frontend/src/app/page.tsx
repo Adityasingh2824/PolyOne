@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { motion, useScroll, useTransform } from 'framer-motion'
+import { motion, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion'
 import { 
   ArrowRight,
   Rocket,
@@ -14,42 +14,78 @@ import {
   Box,
   ChevronRight,
   Play,
-  ExternalLink
+  Sparkles
 } from 'lucide-react'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useWallet } from '@/hooks/useWallet'
 import toast from 'react-hot-toast'
 
 export default function Home() {
-  const { connect, address, isConnected, isConnecting } = useWallet()
+  const { isConnected, isConnecting } = useWallet()
+  const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; delay: number }>>([])
+  const [taglineDisplay, setTaglineDisplay] = useState('')
+  const navItems = useMemo(
+    () => [
+      { label: 'Build', href: '#build' },
+      { label: 'Apps', href: '#apps' },
+      { label: 'Performance', href: '#performance' }
+    ],
+    []
+  )
+  const fullTagline = 'One click. One chain. PolyOne.'
+  
+  // Mouse position for cursor effect - declare before useEffect
+  const mouseX = useMotionValue(typeof window !== 'undefined' ? window.innerWidth / 2 : 0)
+  const mouseY = useMotionValue(typeof window !== 'undefined' ? window.innerHeight / 2 : 0)
+  const springConfig = { damping: 25, stiffness: 200 }
+  const cursorX = useSpring(mouseX, springConfig)
+  const cursorY = useSpring(mouseY, springConfig)
 
-  const handleConnect = async () => {
-    try {
-      await connect()
-      toast.success('MetaMask connected successfully!')
-    } catch (error: any) {
-      if (error.message?.includes('not installed')) {
-        toast.error(
-          (t) => (
-            <div className="flex flex-col gap-2">
-              <span>MetaMask is not installed. Please install MetaMask to continue.</span>
-              <button
-                onClick={() => {
-                  window.open('https://metamask.io/download/', '_blank')
-                  toast.dismiss(t.id)
-                }}
-                className="text-sm underline text-purple-400 hover:text-purple-300 self-start"
-              >
-                Install MetaMask
-              </button>
-            </div>
-          ),
-          { duration: 5000 }
-        )
-      } else {
-        toast.error(error.message || 'Failed to connect MetaMask')
-      }
+  useEffect(() => {
+    // Create floating particles
+    const newParticles = Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      delay: Math.random() * 5
+    }))
+    setParticles(newParticles)
+
+    // Track mouse position for interactive effects
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseX.set(e.clientX)
+      mouseY.set(e.clientY)
     }
-  }
+    window.addEventListener('mousemove', handleMouseMove)
+    return () => window.removeEventListener('mousemove', handleMouseMove)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // mouseX and mouseY are stable references from useMotionValue, don't need to be in deps
+
+  const [hasShownConnectToast, setHasShownConnectToast] = useState(false)
+
+  useEffect(() => {
+    let currentIndex = 0
+    const interval = setInterval(() => {
+      currentIndex += 1
+      setTaglineDisplay(fullTagline.slice(0, currentIndex))
+      if (currentIndex >= fullTagline.length) {
+        clearInterval(interval)
+      }
+    }, 55)
+
+    return () => clearInterval(interval)
+  }, [fullTagline])
+
+  useEffect(() => {
+    if (isConnected && !hasShownConnectToast) {
+      toast.success('Wallet connected successfully!')
+      setHasShownConnectToast(true)
+    }
+
+    if (!isConnected && hasShownConnectToast) {
+      setHasShownConnectToast(false)
+    }
+  }, [isConnected, hasShownConnectToast])
   const { scrollYProgress } = useScroll()
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '50%'])
 
@@ -87,53 +123,232 @@ export default function Home() {
   ]
 
   const apps = [
-    { name: 'Chain Factory', category: 'Infrastructure', gradient: 'from-purple-500 to-pink-500' },
-    { name: 'zkEVM Engine', category: 'Security', gradient: 'from-blue-500 to-cyan-500' },
-    { name: 'AggLayer Bridge', category: 'Interoperability', gradient: 'from-green-500 to-emerald-500' },
-    { name: 'Validator Network', category: 'Staking', gradient: 'from-orange-500 to-red-500' }
+    { name: 'Chain Factory', category: 'Infrastructure', gradient: 'from-[#6d28d9] via-[#8b5cf6] to-[#ec4899]' },
+    { name: 'zkEVM Engine', category: 'Security', gradient: 'from-[#312e81] via-[#7c3aed] to-[#c084fc]' },
+    { name: 'AggLayer Bridge', category: 'Interoperability', gradient: 'from-[#4c1d95] via-[#7f1d9e] to-[#a21caf]' },
+    { name: 'Validator Network', category: 'Staking', gradient: 'from-[#1f2937] via-[#4c1d95] to-[#6d28d9]' }
+  ]
+
+  const heroOrbits = [
+    { size: 420, opacity: 0.08, duration: 18 },
+    { size: 560, opacity: 0.05, duration: 22 },
+    { size: 720, opacity: 0.04, duration: 28 }
   ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-purple-950/20 to-slate-950 text-white">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#2c0f54,#050012)] text-white relative overflow-hidden">
+      {/* Animated Energy Field */}
+      <motion.div
+        className="fixed inset-0 opacity-70"
+        style={{
+          backgroundImage:
+            'radial-gradient(120% 120% at 50% 20%, rgba(129, 140, 248, 0.12) 0%, rgba(250, 250, 255, 0) 55%), radial-gradient(80% 80% at 80% 0%, rgba(244, 114, 182, 0.14) 0%, rgba(15, 23, 42, 0) 60%), radial-gradient(90% 90% at 20% 0%, rgba(168, 85, 247, 0.2) 0%, rgba(5, 0, 18, 0) 58%)'
+        }}
+        animate={{ opacity: [0.6, 0.85, 0.6], rotate: [0, 2, 0] }}
+        transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut' }}
+      />
+
+      {/* Neon Circuit Overlay */}
+      <motion.div
+        className="fixed inset-0 pointer-events-none z-0"
+        animate={{ backgroundPosition: ['0% 0%', '100% 100%'] }}
+        transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
+        style={{
+          y,
+          backgroundImage:
+            'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, transparent 25%, transparent 75%, rgba(244, 114, 182, 0.08) 100%), linear-gradient(225deg, rgba(76, 29, 149, 0.12) 0%, transparent 45%, rgba(139, 92, 246, 0.06) 55%, transparent 100%)',
+          backgroundSize: '240% 240%'
+        }}
+      />
+
+      {/* Floating Particles */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        {particles.map((particle) => (
+          <motion.div
+            key={particle.id}
+            className="absolute w-1 h-1 bg-purple-400/30 rounded-full"
+            style={{
+              left: `${particle.x}%`,
+              top: `${particle.y}%`,
+            }}
+            animate={{
+              y: [0, -30, 0],
+              opacity: [0.3, 0.6, 0.3],
+              scale: [1, 1.5, 1],
+            }}
+            transition={{
+              duration: 3 + particle.delay,
+              repeat: Infinity,
+              ease: "easeInOut",
+              delay: particle.delay,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Interactive Cursor Glow */}
+      <motion.div
+        className="fixed w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none z-0"
+        style={{
+          x: useTransform(cursorX, (x) => x - 192),
+          y: useTransform(cursorY, (y) => y - 192),
+        }}
+        animate={{
+          scale: [1, 1.2, 1],
+        }}
+        transition={{
+          duration: 4,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+      />
+
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-slate-950/80 backdrop-blur-xl border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-500 flex items-center justify-center transform group-hover:scale-110 transition-transform">
-              <Rocket className="w-6 h-6" />
+      <nav className="fixed top-6 w-full z-50 pointer-events-none">
+        <div className="max-w-7xl mx-auto px-6">
+          <motion.div
+            className="relative flex items-center justify-between rounded-full bg-white/5 border border-white/10 backdrop-blur-2xl px-6 py-4 pointer-events-auto shadow-[0_0_60px_rgba(124,58,237,0.25)]"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="flex items-center gap-5">
+              <Link href="/" className="flex items-center gap-3 group">
+                <motion.div 
+                  className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-indigo-500 flex items-center justify-center relative overflow-hidden"
+                  whileHover={{ scale: 1.12, rotate: 6 }}
+                  whileTap={{ scale: 0.94 }}
+                >
+                  <motion.div
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                    animate={{
+                      x: ['-100%', '100%'],
+                    }}
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      repeatDelay: 1,
+                    }}
+                  />
+                  <Rocket className="w-6 h-6 relative z-10" />
+                </motion.div>
+                <div className="flex flex-col">
+                  <span className="text-lg font-semibold tracking-tight">PolyOne Network</span>
+                  <motion.span
+                    className="text-[10px] uppercase tracking-[0.35em] text-purple-200/80"
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    Orbiting the Polygon future
+                  </motion.span>
+                </div>
+              </Link>
             </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
-              PolyOne Network
-            </span>
-          </Link>
 
-          <div className="hidden md:flex items-center gap-8">
-            <Link href="#build" className="text-gray-400 hover:text-white transition-colors">Build on PolyOne</Link>
-            <Link href="#apps" className="text-gray-400 hover:text-white transition-colors">Apps</Link>
-            <Link href="#ecosystem" className="text-gray-400 hover:text-white transition-colors">Ecosystem</Link>
-          </div>
+            <motion.ul className="hidden lg:flex items-center gap-8 text-sm">
+              {navItems.map((item, index) => (
+                <motion.li
+                  key={item.href}
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 + index * 0.05 }}
+                >
+                  <Link
+                    href={item.href}
+                    className="relative uppercase tracking-[0.25em] text-purple-100/70 hover:text-purple-100 transition-colors"
+                  >
+                    {item.label}
+                    <motion.span
+                      className="absolute left-0 -bottom-2 h-[2px] w-full bg-gradient-to-r from-purple-400/0 via-purple-400 to-purple-400/0"
+                      initial={{ scaleX: 0 }}
+                      whileHover={{ scaleX: 1 }}
+                      transition={{ duration: 0.35 }}
+                    />
+                  </Link>
+                </motion.li>
+              ))}
+            </motion.ul>
 
-          <div className="flex items-center gap-4">
-            {isConnected ? (
-              <div className="px-4 py-2 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-sm font-medium">
-                {address?.slice(0, 6)}...{address?.slice(-4)}
-              </div>
-            ) : (
-              <button
-                onClick={handleConnect}
-                disabled={isConnecting}
-                className="px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+            <div className="flex items-center gap-4">
+              <ConnectButton.Custom>
+                {({ account, chain, mounted, openAccountModal, openConnectModal }) => {
+                  const ready = mounted
+                  const connected = ready && account && chain
+
+                  if (!connected) {
+                    return (
+                      <motion.button
+                        onClick={() => {
+                          if (openConnectModal) {
+                            openConnectModal()
+                          } else {
+                            toast.error('Wallet modal is not available yet. Please try again in a moment.')
+                          }
+                        }}
+                        disabled={isConnecting}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="relative px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden group"
+                      >
+                        <motion.div
+                          className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                          animate={{
+                            backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+                          }}
+                          transition={{
+                            duration: 3,
+                            repeat: Infinity,
+                          }}
+                        />
+                        <span className="relative z-10 flex items-center gap-2">
+                          {isConnecting ? (
+                            <>
+                              <motion.div
+                                className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                              />
+                              Connecting...
+                            </>
+                          ) : (
+                            <>
+                              Connect Wallet
+                              <Sparkles className="w-4 h-4" />
+                            </>
+                          )}
+                        </span>
+                      </motion.button>
+                    )
+                  }
+
+                  return (
+                    <button
+                      onClick={openAccountModal}
+                      className="px-4 py-2 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-sm font-medium hover:bg-purple-500/30 transition-colors"
+                    >
+                      {account.displayName}
+                    </button>
+                  )
+                }}
+              </ConnectButton.Custom>
+              <Link 
+                href="/dashboard"
+                className="relative px-6 py-2.5 rounded-full border border-purple-400/60 bg-purple-500/10 hover:bg-purple-500/20 font-semibold transition-all overflow-hidden group"
               >
-                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-              </button>
-            )}
-            <Link 
-              href="/dashboard"
-              className="px-6 py-2.5 rounded-full border border-purple-500/50 hover:bg-purple-500/10 font-semibold transition-all"
-            >
-              Launch App
-            </Link>
-          </div>
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-purple-500 via-fuchsia-500 to-indigo-500 opacity-0 group-hover:opacity-100"
+                  animate={{
+                    backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+                  }}
+                  transition={{
+                    duration: 2.4,
+                    repeat: Infinity,
+                  }}
+                  style={{ backgroundSize: '200% 200%' }}
+                />
+                <span className="relative z-10">Launch App</span>
+              </Link>
+            </div>
+          </motion.div>
         </div>
       </nav>
 
@@ -154,7 +369,7 @@ export default function Home() {
             }}
           />
           <motion.div
-            className="absolute top-1/3 right-1/4 w-96 h-96 bg-pink-500/30 rounded-full blur-3xl"
+            className="absolute top-1/3 right-1/4 w-96 h-96 bg-fuchsia-500/25 rounded-full blur-3xl"
             animate={{
               scale: [1.2, 1, 1.2],
               opacity: [0.3, 0.5, 0.3],
@@ -166,7 +381,7 @@ export default function Home() {
             }}
           />
           <motion.div
-            className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-cyan-500/30 rounded-full blur-3xl"
+            className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-500/25 rounded-full blur-3xl"
             animate={{
               scale: [1, 1.3, 1],
               opacity: [0.2, 0.4, 0.2],
@@ -177,6 +392,20 @@ export default function Home() {
               ease: "easeInOut"
             }}
           />
+          {heroOrbits.map((orbit, index) => (
+            <motion.div
+              key={index}
+              className="absolute top-1/2 left-1/2 rounded-full border border-purple-400/20 shadow-[0_0_80px_rgba(124,58,237,0.15)]"
+              style={{
+                width: orbit.size,
+                height: orbit.size,
+                marginTop: -orbit.size / 2,
+                marginLeft: -orbit.size / 2
+              }}
+              animate={{ rotate: [0, 360] }}
+              transition={{ duration: orbit.duration, repeat: Infinity, ease: 'linear' }}
+            />
+          ))}
         </div>
 
         <div className="relative max-w-6xl mx-auto text-center">
@@ -185,10 +414,20 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
           >
+            <motion.div
+              className="flex justify-center mb-6"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, duration: 0.6 }}
+            >
+              <span className="px-6 py-2 rounded-full border border-purple-400/30 bg-gradient-to-r from-purple-500/10 via-fuchsia-500/10 to-indigo-500/10 backdrop-blur-xl text-xs md:text-sm font-semibold tracking-[0.35em] text-purple-100/80 cursor-blink">
+                {taglineDisplay}
+              </span>
+            </motion.div>
             <h1 className="text-6xl md:text-8xl font-bold mb-6 leading-tight">
               The Incubator of the
               <br />
-              <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-purple-300 via-fuchsia-300 to-indigo-300 bg-clip-text text-transparent">
                 Polygon Ecosystem
               </span>
             </h1>
@@ -200,19 +439,42 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
               <Link 
                 href="/dashboard"
-                className="group px-8 py-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all transform hover:scale-105 flex items-center gap-2"
+                className="group relative px-8 py-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all flex items-center gap-2 overflow-hidden"
               >
-                Start using PolyOne
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-pink-500 opacity-0 group-hover:opacity-100"
+                  animate={{
+                    backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                  }}
+                  style={{ backgroundSize: '200% 200%' }}
+                />
+                <motion.span 
+                  className="relative z-10 flex items-center gap-2"
+                  whileHover={{ x: 2 }}
+                >
+                  Start using PolyOne
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </motion.span>
               </Link>
-              <button className="group px-8 py-4 rounded-full border border-white/20 hover:bg-white/5 font-semibold transition-all flex items-center gap-2">
-                <Play className="w-5 h-5" />
-                Watch how it works
-              </button>
+              <motion.button 
+                className="group px-8 py-4 rounded-full border border-white/20 hover:border-white/40 hover:bg-white/5 font-semibold transition-all flex items-center gap-2 relative overflow-hidden"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                />
+                <Play className="w-5 h-5 relative z-10" />
+                <span className="relative z-10">Watch how it works</span>
+              </motion.button>
             </div>
 
-            {/* Quick Start Cards */}
-            <div className="grid md:grid-cols-3 gap-6 mt-20">
+            {/* Quick Start Capsules */}
+            <div className="flex flex-col xl:flex-row xl:flex-wrap gap-6 mt-20 items-stretch justify-center">
               {[
                 {
                   title: 'Quick Start Guide',
@@ -238,17 +500,30 @@ export default function Home() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 + i * 0.1 }}
-                  className="bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-lg rounded-2xl p-8 border border-white/10 hover:border-purple-500/50 transition-all group"
+                  whileHover={{ y: -8, scale: 1.02 }}
+                  className="relative flex-1 min-w-[260px] max-w-sm mx-auto bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-lg rounded-2xl p-8 border border-purple-400/10 hover:border-purple-500/50 transition-all group overflow-hidden"
                 >
-                  <h3 className="text-xl font-bold mb-4">{card.title}</h3>
-                  <p className="text-gray-400 mb-6 leading-relaxed">{card.description}</p>
-                  <Link 
-                    href={card.link}
-                    className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 font-semibold group-hover:gap-3 transition-all"
-                  >
-                    {card.linkText}
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
+                  <motion.div
+                    className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-pink-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    initial={false}
+                  />
+                  <div className="relative z-10">
+                    <motion.div
+                      className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/30 to-fuchsia-500/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"
+                      whileHover={{ rotate: 5 }}
+                    >
+                      <Sparkles className="w-6 h-6 text-purple-400" />
+                    </motion.div>
+                    <h3 className="text-xl font-bold mb-4 group-hover:text-purple-300 transition-colors">{card.title}</h3>
+                    <p className="text-gray-400 mb-6 leading-relaxed group-hover:text-gray-300 transition-colors">{card.description}</p>
+                    <Link 
+                      href={card.link}
+                      className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 font-semibold group-hover:gap-3 transition-all"
+                    >
+                      {card.linkText}
+                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </Link>
+                  </div>
                 </motion.div>
               ))}
             </div>
@@ -279,7 +554,7 @@ export default function Home() {
             </motion.div>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="flex flex-col lg:flex-row lg:flex-wrap gap-8">
             {features.map((feature, i) => (
               <motion.div
                 key={i}
@@ -287,13 +562,36 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
-                className="bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-lg rounded-2xl p-8 border border-white/10 hover:border-purple-500/50 transition-all group"
+                whileHover={{ y: -5, scale: 1.02 }}
+                className="relative flex-1 min-w-[280px] bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-lg rounded-2xl p-8 border border-purple-500/15 hover:border-purple-500/50 transition-all group overflow-hidden cursor-pointer"
               >
-                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  {feature.icon}
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-fuchsia-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  initial={false}
+                />
+                <div className="relative z-10">
+                  <motion.div 
+                    className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform relative overflow-hidden"
+                    whileHover={{ rotate: [0, -5, 5, 0] }}
+                  >
+                    <motion.div
+                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                      animate={{
+                        x: ['-100%', '100%'],
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        repeatDelay: 2,
+                      }}
+                    />
+                    <div className="relative z-10 text-purple-300 group-hover:text-purple-200 transition-colors">
+                      {feature.icon}
+                    </div>
+                  </motion.div>
+                  <h3 className="text-xl font-bold mb-4 group-hover:text-purple-300 transition-colors">{feature.title}</h3>
+                  <p className="text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors">{feature.description}</p>
                 </div>
-                <h3 className="text-xl font-bold mb-4">{feature.title}</h3>
-                <p className="text-gray-400 leading-relaxed">{feature.description}</p>
               </motion.div>
             ))}
           </div>
@@ -305,14 +603,14 @@ export default function Home() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-12">
             <h2 className="text-4xl md:text-5xl font-bold">
-              <span className="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-purple-300 via-fuchsia-300 to-indigo-300 bg-clip-text text-transparent">
                 Apps on PolyOne
               </span>
             </h2>
             <span className="text-gray-400">Featured by PolyOne Apps DAO</span>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="flex flex-col lg:flex-row lg:flex-wrap gap-6">
             {apps.map((app, i) => (
               <motion.div
                 key={i}
@@ -320,14 +618,37 @@ export default function Home() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
-                whileHover={{ scale: 1.05 }}
-                className="relative group cursor-pointer"
+                whileHover={{ scale: 1.05, y: -5 }}
+                className="relative group cursor-pointer flex-1 min-w-[240px] max-w-sm mx-auto"
               >
-                <div className={`absolute inset-0 bg-gradient-to-br ${app.gradient} opacity-20 rounded-2xl blur-xl group-hover:opacity-40 transition-opacity`} />
-                <div className="relative bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-8 border border-white/10 group-hover:border-white/30 transition-all">
-                  <div className="text-xs text-gray-400 mb-2">{app.category}</div>
-                  <h3 className="text-xl font-bold mb-4">{app.name}</h3>
-                  <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-white group-hover:translate-x-1 transition-all" />
+                <motion.div 
+                  className={`absolute inset-0 bg-gradient-to-br ${app.gradient} opacity-20 rounded-2xl blur-xl group-hover:opacity-40 transition-opacity`}
+                  animate={{
+                    scale: [1, 1.1, 1],
+                    opacity: [0.2, 0.3, 0.2],
+                  }}
+                  transition={{
+                    duration: 3 + i,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
+                />
+                <div className="relative bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-8 border border-white/10 group-hover:border-white/30 transition-all overflow-hidden">
+                  <motion.div
+                    className={`absolute inset-0 bg-gradient-to-br ${app.gradient} opacity-0 group-hover:opacity-10 transition-opacity`}
+                    initial={false}
+                  />
+                  <div className="relative z-10">
+                    <div className="text-xs text-gray-400 mb-2 group-hover:text-gray-300 transition-colors">{app.category}</div>
+                    <h3 className="text-xl font-bold mb-4 group-hover:bg-gradient-to-r group-hover:from-purple-400 group-hover:to-pink-400 group-hover:bg-clip-text group-hover:text-transparent transition-all">
+                      {app.name}
+                    </h3>
+                    <motion.div
+                      whileHover={{ x: 5 }}
+                    >
+                      <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-white transition-all" />
+                    </motion.div>
+                  </div>
                 </div>
               </motion.div>
             ))}
@@ -336,18 +657,19 @@ export default function Home() {
       </section>
 
       {/* Performance Features */}
-      <section className="py-32 px-6">
+      <section id="performance" className="py-32 px-6">
         <div className="max-w-7xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
+          <div className="flex flex-col xl:flex-row gap-16 items-stretch">
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
+              className="flex-1"
             >
               <h2 className="text-4xl md:text-5xl font-bold mb-8">
                 Gateway to
                 <br />
-                <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-purple-300 via-fuchsia-300 to-indigo-300 bg-clip-text text-transparent">
                   App Chains
                 </span>
               </h2>
@@ -373,13 +695,13 @@ export default function Home() {
               initial={{ opacity: 0, x: 20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              className="relative"
+              className="relative flex-1"
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-cyan-500/20 rounded-3xl blur-3xl" />
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 via-fuchsia-500/10 to-indigo-500/10 rounded-3xl blur-3xl" />
               <div className="relative bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-3xl p-12 border border-white/10">
                 <div className="space-y-8">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-600 via-fuchsia-600 to-pink-500 flex items-center justify-center">
                       <Zap className="w-8 h-8" />
                     </div>
                     <div>
@@ -388,7 +710,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-600 via-purple-600 to-fuchsia-500 flex items-center justify-center">
                       <Shield className="w-8 h-8" />
                     </div>
                     <div>
@@ -397,7 +719,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-[#312e81] via-[#6d28d9] to-[#9333ea] flex items-center justify-center">
                       <Globe2 className="w-8 h-8" />
                     </div>
                     <div>
@@ -430,20 +752,36 @@ export default function Home() {
             </p>
             <Link 
               href="/dashboard"
-              className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all transform hover:scale-105"
+              className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all overflow-hidden"
             >
-              Start Building Now
-              <ArrowRight className="w-5 h-5" />
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-pink-500 opacity-0 group-hover:opacity-100"
+                animate={{
+                  backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+                }}
+                transition={{
+                  duration: 2,
+                  repeat: Infinity,
+                }}
+                style={{ backgroundSize: '200% 200%' }}
+              />
+              <motion.span 
+                className="relative z-10 flex items-center gap-2"
+                whileHover={{ x: 2 }}
+              >
+                Start Building Now
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </motion.span>
             </Link>
           </motion.div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-white/10 py-12 px-6">
+      <footer id="footer" className="border-t border-white/10 py-12 px-6">
         <div className="max-w-7xl mx-auto">
-          <div className="grid md:grid-cols-4 gap-8 mb-12">
-            <div>
+          <div className="flex flex-col lg:flex-row lg:flex-wrap gap-12 mb-12">
+            <div className="flex-1 min-w-[220px]">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
                   <Rocket className="w-6 h-6" />
@@ -460,7 +798,7 @@ export default function Home() {
               { title: 'Use', links: ['Wallets', 'Apps', 'DEX'] },
               { title: 'Community', links: ['Discord', 'Twitter', 'Forum'] }
             ].map((section, i) => (
-              <div key={i}>
+              <div key={i} className="flex-1 min-w-[160px]">
                 <h4 className="font-bold mb-4">{section.title}</h4>
                 <ul className="space-y-2">
                   {section.links.map((link, j) => (

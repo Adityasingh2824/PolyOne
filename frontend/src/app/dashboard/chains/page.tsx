@@ -17,17 +17,18 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import DashboardLayout from '@/components/DashboardLayout'
 import { useWallet } from '@/hooks/useWallet'
+import { PRIMARY_CHAIN_ID, polygonMainnet } from '@/lib/chains'
 import { ethers } from 'ethers'
 
 const CHAIN_FACTORY_ABI = [
-  "function getChain(uint256 _chainId) external view returns (uint256 id, address owner, string memory name, string memory chainType, string memory rollupType, string memory gasToken, uint256 validators, uint256 createdAt, bool isActive, string memory rpcUrl, string memory explorerUrl)",
-  "function getUserChains(address _user) external view returns (uint256[] memory)",
+  "function getChain(uint256 _chainId) external view returns (tuple(uint256 id, address owner, string name, string chainType, string rollupType, string gasToken, uint256 validators, uint256 createdAt, bool isActive, string rpcUrl, string explorerUrl))",
+  "function getUserChains(address _user) external view returns (uint256[])",
   "function getTotalChains() external view returns (uint256)"
 ]
 
 export default function MyChainsPage() {
   const router = useRouter()
-  const { address, isConnected, chainId } = useWallet()
+  const { address, isConnected, chainId, getProvider } = useWallet()
   const [chains, setChains] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingOnChain, setLoadingOnChain] = useState(false)
@@ -39,7 +40,7 @@ export default function MyChainsPage() {
     if (isConnected && address) {
       loadChainsFromBlockchain()
     }
-  }, [isConnected, address, chainId])
+  }, [isConnected, address, chainId, getProvider])
 
   const loadChains = () => {
     try {
@@ -56,7 +57,7 @@ export default function MyChainsPage() {
   }
 
   const loadChainsFromBlockchain = async () => {
-    if (!window.ethereum || !address) return
+    if (!address) return
     
     const contractAddress = process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS
     if (!contractAddress || !ethers.isAddress(contractAddress)) {
@@ -64,13 +65,23 @@ export default function MyChainsPage() {
       return
     }
 
-    if (chainId !== 137 && chainId !== 80002) {
+    if (chainId !== polygonMainnet.id && chainId !== PRIMARY_CHAIN_ID) {
       return
     }
 
     setLoadingOnChain(true)
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum)
+      const eip1193Provider = await getProvider()
+      const provider = new ethers.BrowserProvider(eip1193Provider)
+
+      const code = await provider.getCode(contractAddress)
+      if (!code || code === '0x' || code === '0x0') {
+        console.warn('ChainFactory contract not found at configured address. Skipping on-chain sync.')
+        setLoading(false)
+        setLoadingOnChain(false)
+        return
+      }
+
       const contract = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, provider)
       
       const chainIds = await contract.getUserChains(address)
@@ -170,7 +181,7 @@ export default function MyChainsPage() {
             <button
               onClick={handleRefresh}
               disabled={loadingOnChain}
-              className="px-4 py-2 rounded-xl border border-white/20 hover:bg-white/5 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 rounded-xl border border-purple-400/40 hover:border-purple-300/70 hover:bg-purple-500/15 transition-all flex items-center gap-2 disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${loadingOnChain ? 'animate-spin' : ''}`} />
               Refresh
@@ -186,7 +197,7 @@ export default function MyChainsPage() {
         </div>
 
         {/* Search and Filter */}
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -212,47 +223,97 @@ export default function MyChainsPage() {
         </div>
 
         {/* Stats Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-4 border border-white/10"
+            whileHover={{ y: -5, scale: 1.02 }}
+            className="relative bg-gradient-to-br from-white/12 via-purple-500/10 to-white/5 backdrop-blur-2xl rounded-2xl p-4 border border-purple-500/25 hover:border-purple-400/60 transition-all group overflow-hidden shadow-[0_12px_35px_rgba(109,40,217,0.25)]"
           >
-            <div className="text-2xl font-bold mb-1">{chains.length}</div>
-            <div className="text-sm text-gray-400">Total Chains</div>
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-pink-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+              initial={false}
+            />
+            <div className="relative z-10">
+              <motion.div 
+                className="text-2xl font-bold mb-1"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.1, type: "spring" }}
+              >
+                {chains.length}
+              </motion.div>
+              <div className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">Total Chains</div>
+            </div>
           </motion.div>
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1 }}
-            className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-4 border border-white/10"
+            whileHover={{ y: -5, scale: 1.02 }}
+            className="relative bg-gradient-to-br from-white/12 via-purple-500/10 to-white/5 backdrop-blur-2xl rounded-2xl p-4 border border-purple-500/25 hover:border-purple-400/60 transition-all group overflow-hidden shadow-[0_12px_35px_rgba(109,40,217,0.25)]"
           >
-            <div className="text-2xl font-bold mb-1 text-green-400">
-              {chains.filter(c => c.status === 'active' || c.isActive).length}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-br from-purple-500/15 to-fuchsia-500/15 opacity-0 group-hover:opacity-100 transition-opacity"
+              initial={false}
+            />
+            <div className="relative z-10">
+              <motion.div 
+                className="text-2xl font-bold mb-1 text-purple-200"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: "spring" }}
+              >
+                {chains.filter(c => c.status === 'active' || c.isActive).length}
+              </motion.div>
+              <div className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">Active</div>
             </div>
-            <div className="text-sm text-gray-400">Active</div>
           </motion.div>
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2 }}
-            className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-4 border border-white/10"
+            whileHover={{ y: -5, scale: 1.02 }}
+            className="relative bg-gradient-to-br from-white/12 via-purple-500/10 to-white/5 backdrop-blur-2xl rounded-2xl p-4 border border-purple-500/25 hover:border-purple-400/60 transition-all group overflow-hidden shadow-[0_12px_35px_rgba(109,40,217,0.25)]"
           >
-            <div className="text-2xl font-bold mb-1 text-green-400">
-              {chains.filter(c => c.onChainRegistered).length}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-br from-indigo-500/15 to-purple-500/15 opacity-0 group-hover:opacity-100 transition-opacity"
+              initial={false}
+            />
+            <div className="relative z-10">
+              <motion.div 
+                className="text-2xl font-bold mb-1 text-purple-200"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.3, type: "spring" }}
+              >
+                {chains.filter(c => c.onChainRegistered).length}
+              </motion.div>
+              <div className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">On-Chain</div>
             </div>
-            <div className="text-sm text-gray-400">On-Chain</div>
           </motion.div>
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3 }}
-            className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-4 border border-white/10"
+            whileHover={{ y: -5, scale: 1.02 }}
+            className="relative bg-gradient-to-br from-white/12 via-purple-500/10 to-white/5 backdrop-blur-2xl rounded-2xl p-4 border border-purple-500/25 hover:border-purple-400/60 transition-all group overflow-hidden shadow-[0_12px_35px_rgba(109,40,217,0.25)]"
           >
-            <div className="text-2xl font-bold mb-1">
-              {chains.reduce((acc, c) => acc + (parseInt(c.validators || c.initialValidators || '0')), 0)}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-br from-fuchsia-500/15 to-purple-500/15 opacity-0 group-hover:opacity-100 transition-opacity"
+              initial={false}
+            />
+            <div className="relative z-10">
+              <motion.div 
+                className="text-2xl font-bold mb-1"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.4, type: "spring" }}
+              >
+                {chains.reduce((acc, c) => acc + (parseInt(c.validators || c.initialValidators || '0')), 0)}
+              </motion.div>
+              <div className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">Validators</div>
             </div>
-            <div className="text-sm text-gray-400">Validators</div>
           </motion.div>
         </div>
 
@@ -293,24 +354,53 @@ export default function MyChainsPage() {
             )}
           </motion.div>
         ) : (
-          <div className="grid gap-4 sm:gap-6">
+          <div className="flex flex-col gap-4 sm:gap-6">
             {filteredChains.map((chain, i) => (
               <motion.div
                 key={chain.id || i}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
-                className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-2xl p-4 sm:p-6 border border-white/10 hover:border-purple-500/50 transition-all group cursor-pointer"
+                whileHover={{ y: -5, scale: 1.01 }}
+                className="relative bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-[28px] p-4 sm:p-6 border border-white/10 hover:border-purple-500/50 transition-all group cursor-pointer overflow-hidden shadow-[0_20px_50px_rgba(109,40,217,0.25)]"
                 onClick={() => {
                   const safeId = encodeURIComponent(String(chain.id || ''))
                   router.push(`/dashboard/chains/${safeId}`)
                 }}
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-pink-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  initial={false}
+                />
+                <motion.div
+                  className="pointer-events-none absolute top-4 left-6 right-6 h-px bg-gradient-to-r from-transparent via-purple-200/25 to-transparent rounded-full"
+                  animate={{ opacity: [0.2, 0.5, 0.2] }}
+                  transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                />
+                <motion.div
+                  className="pointer-events-none absolute bottom-4 left-6 right-6 h-px bg-gradient-to-r from-transparent via-fuchsia-200/25 to-transparent rounded-full"
+                  animate={{ opacity: [0.2, 0.45, 0.2], scaleX: [0.9, 1, 0.9] }}
+                  transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
+                />
+                <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                      <Globe className="w-6 h-6 sm:w-8 sm:h-8" />
-                    </div>
+                    <motion.div 
+                      className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 relative overflow-hidden"
+                      whileHover={{ scale: 1.1, rotate: 5 }}
+                    >
+                      <motion.div
+                        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                        animate={{
+                          x: ['-100%', '100%'],
+                        }}
+                        transition={{
+                          duration: 2,
+                          repeat: Infinity,
+                          repeatDelay: 2,
+                        }}
+                      />
+                      <Globe className="w-6 h-6 sm:w-8 sm:h-8 relative z-10" />
+                    </motion.div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Link href={`/dashboard/chains/${encodeURIComponent(String(chain.id || ''))}`} onClick={(e) => e.stopPropagation()}>
@@ -329,28 +419,28 @@ export default function MyChainsPage() {
                           </span>
                         )}
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-400 mb-2">
-                        <span className="px-2 py-1 rounded-md bg-purple-500/20 text-purple-400 capitalize">
+                      <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-300 mb-2">
+                        <span className="px-2 py-1 rounded-md bg-purple-500/25 text-purple-200 capitalize">
                           {chain.chainType}
                         </span>
-                        <span className="px-2 py-1 rounded-md bg-cyan-500/20 text-cyan-400">
+                        <span className="px-2 py-1 rounded-md bg-indigo-500/25 text-indigo-200">
                           {chain.rollupType}
                         </span>
                         <span className="hidden sm:inline">•</span>
                         <span className="hidden sm:inline">{chain.gasToken} Gas Token</span>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
-                        <div className="text-xs">
+                      <div className="flex flex-wrap gap-3 text-xs mb-2">
+                        <div>
                           <span className="text-gray-500">Chain ID:</span>
                           <span className="text-white ml-1 font-semibold">{chain.chainId || 'N/A'}</span>
                         </div>
-                        <div className="text-xs">
+                        <div>
                           <span className="text-gray-500">Validators:</span>
                           <span className="text-white ml-1 font-semibold">
                             {chain.validators || chain.initialValidators || 'N/A'}
                           </span>
                         </div>
-                        <div className="text-xs">
+                        <div>
                           <span className="text-gray-500">Status:</span>
                           <span className={`ml-1 font-semibold ${
                             chain.status === 'active' || chain.isActive ? 'text-green-400' : 'text-gray-400'
@@ -359,7 +449,7 @@ export default function MyChainsPage() {
                           </span>
                         </div>
                         {chain.transactions !== undefined && (
-                          <div className="text-xs">
+                          <div>
                             <span className="text-gray-500">TXs:</span>
                             <span className="text-white ml-1 font-semibold">{chain.transactions || 0}</span>
                           </div>

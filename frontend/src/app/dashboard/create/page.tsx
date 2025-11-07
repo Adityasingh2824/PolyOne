@@ -3,26 +3,26 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Rocket, Info, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Rocket, Info, ExternalLink, Network, Cpu, Layers, Zap } from 'lucide-react'
 import Link from 'next/link'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 import DashboardLayout from '@/components/DashboardLayout'
 import { useWallet } from '@/hooks/useWallet'
 import { ethers } from 'ethers'
-import { web3Service, NETWORKS } from '@/lib/web3'
+import { PRIMARY_CHAIN_ID, polygonMainnet } from '@/lib/chains'
 
 const CHAIN_FACTORY_ABI = [
-  "function createChain(string memory _name, string memory _chainType, string memory _rollupType, string memory _gasToken, uint256 _validators, string memory _rpcUrl, string memory _explorerUrl) external returns (uint256)",
-  "function getChain(uint256 _chainId) external view returns (uint256 id, address owner, string memory name, string memory chainType, string memory rollupType, string memory gasToken, uint256 validators, uint256 createdAt, bool isActive, string memory rpcUrl, string memory explorerUrl)",
-  "function getUserChains(address _user) external view returns (uint256[] memory)",
+  "function createChain(string _name, string _chainType, string _rollupType, string _gasToken, uint256 _validators, string _rpcUrl, string _explorerUrl) external returns (uint256)",
+  "function getChain(uint256 _chainId) external view returns (tuple(uint256 id, address owner, string name, string chainType, string rollupType, string gasToken, uint256 validators, uint256 createdAt, bool isActive, string rpcUrl, string explorerUrl))",
+  "function getUserChains(address _user) external view returns (uint256[])",
   "function getTotalChains() external view returns (uint256)",
   "event ChainCreated(uint256 indexed chainId, address indexed owner, string name, string chainType, string rollupType)"
 ]
 
 export default function CreateChainPage() {
   const router = useRouter()
-  const { address, isConnected, chainId } = useWallet()
+  const { address, isConnected, chainId, switchNetwork, getProvider } = useWallet()
   const [loading, setLoading] = useState(false)
   const [txHash, setTxHash] = useState<string | null>(null)
   const [polygonScanUrl, setPolygonScanUrl] = useState<string | null>(null)
@@ -40,11 +40,11 @@ export default function CreateChainPage() {
   }
 
   // Check if user is on Polygon network
-  const isPolygonNetwork = chainId === 137 || chainId === 80002 // Polygon Mainnet or Amoy Testnet
+  const isPolygonNetwork = chainId === polygonMainnet.id || chainId === PRIMARY_CHAIN_ID // Polygon Mainnet or Amoy Testnet
   const getPolygonScanUrl = (txHash: string) => {
-    if (chainId === 137) {
+    if (chainId === polygonMainnet.id) {
       return `https://polygonscan.com/tx/${txHash}`
-    } else if (chainId === 80002) {
+    } else if (chainId === PRIMARY_CHAIN_ID) {
       return `https://amoy.polygonscan.com/tx/${txHash}`
     }
     return null
@@ -96,18 +96,12 @@ export default function CreateChainPage() {
     if (!isPolygonNetwork) {
       try {
         toast.loading('Switching to Polygon Amoy Testnet...', { id: 'network-switch' })
-        await web3Service.switchToPolygon('POLYGON_AMOY')
-        // Wait a moment for the network to update
-        await new Promise(resolve => setTimeout(resolve, 1500))
-        // Get updated chainId from provider
-        if (window.ethereum) {
-          const provider = new ethers.BrowserProvider(window.ethereum)
-          const network = await provider.getNetwork()
-          currentChainId = Number(network.chainId)
-        }
+        await switchNetwork(PRIMARY_CHAIN_ID)
+        currentChainId = PRIMARY_CHAIN_ID
         toast.success('Switched to Polygon Amoy Testnet!', { id: 'network-switch' })
       } catch (networkError: any) {
-        toast.error(`Failed to switch network: ${networkError.message}`, { id: 'network-switch' })
+        const message = networkError?.message || 'Unknown error'
+        toast.error(`Failed to switch network: ${message}`, { id: 'network-switch' })
         return
       }
     }
@@ -120,11 +114,8 @@ export default function CreateChainPage() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
       // Step 1: Create chain on blockchain first (REQUIRED)
-      if (!window.ethereum) {
-        throw new Error('MetaMask is required for on-chain registration')
-      }
-
-      const provider = new ethers.BrowserProvider(window.ethereum)
+      const eip1193Provider = await getProvider()
+      const provider = new ethers.BrowserProvider(eip1193Provider)
       const signer = await provider.getSigner()
       
       // Validate contract address format
@@ -239,42 +230,70 @@ export default function CreateChainPage() {
         throw new Error(gasErrorMessage)
       }
 
-      // Get fee data
-      const feeData = await provider.getFeeData()
+      // Get fee data & detect EIP-1559 support
+      const [feeData, latestBlock] = await Promise.all([
+        provider.getFeeData(),
+        provider.getBlock('latest')
+      ])
+      const supportsEip1559 = latestBlock?.baseFeePerGas !== null && latestBlock?.baseFeePerGas !== undefined
       console.log('Fee data:', {
         gasPrice: feeData.gasPrice?.toString(),
         maxFeePerGas: feeData.maxFeePerGas?.toString(),
-        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas?.toString()
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas?.toString(),
+        supportsEip1559
       })
 
       // Send transaction - try simpler approach first
       let tx
+      let legacyGasPrice: bigint | null = null
       try {
         toast.loading('📤 Sending transaction...', { id: 'blockchain-tx' })
         
         // Use populateTransaction and sendTransaction for more control
         populatedTx.gasLimit = gasEstimate
-        
-        // Add fee data based on network type
-        if (feeData.maxFeePerGas) {
-          // EIP-1559 transaction
+
+        if (supportsEip1559 && feeData.maxFeePerGas) {
+          // Ensure type 2 (EIP-1559) transaction
+          populatedTx.type = 2
           populatedTx.maxFeePerGas = feeData.maxFeePerGas
-          populatedTx.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || feeData.maxFeePerGas / 2n
-        } else if (feeData.gasPrice) {
-          // Legacy transaction
-          populatedTx.gasPrice = feeData.gasPrice
+          populatedTx.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? feeData.maxFeePerGas / 2n
+          delete populatedTx.gasPrice
+        } else {
+          // Force legacy transaction params
+          populatedTx.type = 0
+          legacyGasPrice = feeData.gasPrice ?? await provider.getGasPrice()
+          populatedTx.gasPrice = legacyGasPrice
+          delete populatedTx.maxFeePerGas
+          delete populatedTx.maxPriorityFeePerGas
+        }
+
+        const txRequest: any = {
+          to: populatedTx.to,
+          data: populatedTx.data,
+          gasLimit: populatedTx.gasLimit,
+          value: populatedTx.value ?? 0
+        }
+
+        if (supportsEip1559 && feeData.maxFeePerGas) {
+          txRequest.type = 2
+          txRequest.maxFeePerGas = populatedTx.maxFeePerGas
+          txRequest.maxPriorityFeePerGas = populatedTx.maxPriorityFeePerGas
+        } else {
+          txRequest.type = 0
+          txRequest.gasPrice = legacyGasPrice ?? feeData.gasPrice ?? await provider.getGasPrice()
         }
 
         console.log('Sending transaction with params:', {
-          to: populatedTx.to,
-          data: populatedTx.data?.slice(0, 20) + '...',
-          gasLimit: populatedTx.gasLimit?.toString(),
-          maxFeePerGas: populatedTx.maxFeePerGas?.toString(),
-          gasPrice: populatedTx.gasPrice?.toString()
+          to: txRequest.to,
+          data: txRequest.data?.slice(0, 20) + '...',
+          gasLimit: txRequest.gasLimit?.toString(),
+          type: txRequest.type,
+          maxFeePerGas: txRequest.maxFeePerGas?.toString(),
+          gasPrice: txRequest.gasPrice?.toString()
         })
 
         // Try sending using signer.sendTransaction first
-        tx = await signer.sendTransaction(populatedTx)
+        tx = await signer.sendTransaction(txRequest)
         console.log('Transaction sent:', tx.hash)
       } catch (txError: any) {
         console.error('Transaction send error:', txError)
@@ -288,11 +307,46 @@ export default function CreateChainPage() {
           transaction: txError.transaction
         })
         
+        const eip1559Rejected =
+          txError?.code === -32602 ||
+          txError?.error?.code === -32602 ||
+          txError?.message?.toLowerCase()?.includes('does not support eip-1559') ||
+          txError?.error?.message?.toLowerCase()?.includes('does not support eip-1559')
+
+        if (eip1559Rejected) {
+          try {
+            console.warn('RPC rejected EIP-1559 tx; retrying as legacy type-0 transaction')
+            const legacyGas = legacyGasPrice ?? feeData.gasPrice ?? (await provider.getGasPrice())
+            const legacyTx = {
+              to: populatedTx.to,
+              data: populatedTx.data,
+              gasLimit: populatedTx.gasLimit,
+              gasPrice: legacyGas,
+              type: 0,
+              value: populatedTx.value ?? 0
+            }
+            tx = await signer.sendTransaction(legacyTx)
+            console.log('Legacy transaction sent:', tx.hash)
+          } catch (legacyError) {
+            console.error('Legacy retry failed:', legacyError)
+          }
+        }
+
         // Try fallback method if direct sendTransaction failed
-        if (txError.code === -32603 || txError.error?.code === -32603) {
+        if (!tx && (txError.code === -32603 || txError.error?.code === -32603)) {
           console.log('Attempting fallback method (contract method call)...')
           try {
             // Fallback: use contract method directly (let ethers handle everything)
+            const txOverrides: any = {
+              gasLimit: gasEstimate
+            }
+            if (!supportsEip1559) {
+              txOverrides.gasPrice = legacyGasPrice ?? feeData.gasPrice ?? await provider.getGasPrice()
+            } else if (eip1559Rejected) {
+              txOverrides.gasPrice = legacyGasPrice ?? feeData.gasPrice ?? await provider.getGasPrice()
+              txOverrides.type = 0
+            }
+
             tx = await contractWithSigner.createChain(
               txParams.name,
               txParams.chainType,
@@ -301,9 +355,7 @@ export default function CreateChainPage() {
               txParams.validators,
               txParams.rpcUrl,
               txParams.explorerUrl,
-              {
-                gasLimit: gasEstimate
-              }
+              txOverrides
             )
             console.log('Transaction sent via fallback method:', tx.hash)
           } catch (fallbackError: any) {
@@ -352,9 +404,9 @@ export default function CreateChainPage() {
       const txHashValue = tx.hash
       setTxHash(txHashValue)
       // Use currentChainId instead of chainId for the scan URL
-      const scanUrl = currentChainId === 137 
+      const scanUrl = currentChainId === polygonMainnet.id 
         ? `https://polygonscan.com/tx/${txHashValue}`
-        : currentChainId === 80002
+        : currentChainId === PRIMARY_CHAIN_ID
         ? `https://amoy.polygonscan.com/tx/${txHashValue}`
         : null
       setPolygonScanUrl(scanUrl)
@@ -561,14 +613,63 @@ export default function CreateChainPage() {
   if (!isConnected) {
     return (
       <DashboardLayout>
-        <div className="min-h-[80vh] flex items-center justify-center">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold mb-4">Connect Wallet Required</h2>
-            <p className="text-gray-400 mb-8">Please connect your wallet to create a blockchain</p>
-            <Link href="/dashboard" className="px-6 py-3 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 font-semibold">
-              Back to Dashboard
-            </Link>
-          </div>
+        <div className="min-h-[80vh] flex items-center justify-center relative overflow-hidden">
+          <motion.div
+            className="absolute inset-0 -z-10"
+            style={{
+              backgroundImage:
+                'radial-gradient(120% 120% at 15% -20%, rgba(168, 85, 247, 0.35) 0%, transparent 60%), radial-gradient(140% 140% at 85% 120%, rgba(236, 72, 153, 0.25) 0%, transparent 70%), radial-gradient(80% 80% at 50% 30%, rgba(79, 70, 229, 0.22) 0%, transparent 75%)'
+            }}
+            animate={{ opacity: [0.6, 0.85, 0.6] }}
+            transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="absolute inset-0 -z-10 opacity-50"
+            animate={{ backgroundPosition: ['0% 0%', '120% 120%'] }}
+            transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+            style={{
+              backgroundImage:
+                'linear-gradient(135deg, rgba(124, 58, 237, 0.12) 0%, transparent 25%, transparent 75%, rgba(236, 72, 153, 0.12) 100%), linear-gradient(225deg, rgba(99, 102, 241, 0.1) 0%, transparent 45%, rgba(147, 51, 234, 0.08) 55%, transparent 100%)',
+              backgroundSize: '200% 200%'
+            }}
+          />
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center relative"
+          >
+            <div className="relative bg-gradient-to-br from-white/10 via-purple-500/10 to-white/5 backdrop-blur-2xl rounded-3xl p-12 border border-purple-500/30 shadow-[0_0_80px_rgba(124,58,237,0.45)] overflow-hidden">
+              <motion.div
+                className="absolute inset-0 opacity-20"
+                animate={{ rotate: [0, 3, 0] }}
+                transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut' }}
+                style={{
+                  backgroundImage:
+                    'linear-gradient(90deg, rgba(129, 140, 248, 0.2) 0%, transparent 45%, rgba(236, 72, 153, 0.2) 100%)'
+                }}
+              />
+              <div className="relative z-10">
+                <motion.div
+                  className="w-20 h-20 mx-auto mb-8 rounded-2xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-indigo-500 flex items-center justify-center border border-purple-400/50 shadow-[0_0_40px_rgba(168,85,247,0.6)]"
+                  animate={{ scale: [1, 1.12, 1], rotate: [0, -4, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  <Network className="w-10 h-10 text-white" />
+                </motion.div>
+                <h2 className="text-3xl font-bold mb-4 bg-gradient-to-r from-purple-300 via-fuchsia-300 to-indigo-300 bg-clip-text text-transparent">
+                  Connect Wallet to Continue
+                </h2>
+                <p className="text-gray-300 mb-8">One click away from launching your custom Polygon chain.</p>
+                <Link 
+                  href="/dashboard" 
+                  className="inline-flex items-center gap-2 px-8 py-3 rounded-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-indigo-500 hover:from-purple-600 hover:via-fuchsia-600 hover:to-indigo-600 font-semibold transition-all shadow-[0_12px_30px_rgba(124,58,237,0.35)]"
+                >
+                  Back to Dashboard
+                </Link>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </DashboardLayout>
     )
@@ -576,88 +677,210 @@ export default function CreateChainPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto">
-        <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-8">
-          <ArrowLeft className="w-4 h-4" />
-          Back to Dashboard
-        </Link>
+      <div className="max-w-4xl mx-auto relative">
+        {/* Animated Background */}
+        <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+          <motion.div
+            className="absolute inset-0"
+            style={{
+              backgroundImage:
+                'radial-gradient(130% 130% at 10% 0%, rgba(168, 85, 247, 0.25) 0%, transparent 55%), radial-gradient(110% 110% at 90% 10%, rgba(236, 72, 153, 0.2) 0%, transparent 60%), radial-gradient(120% 120% at 50% 120%, rgba(79, 70, 229, 0.18) 0%, transparent 70%)'
+            }}
+            animate={{ opacity: [0.55, 0.85, 0.55] }}
+            transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="absolute inset-0 opacity-60"
+            animate={{ backgroundPosition: ['0% 0%', '100% 100%'] }}
+            transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+            style={{
+              backgroundImage:
+                'linear-gradient(140deg, rgba(124, 58, 237, 0.15) 0%, transparent 35%, transparent 65%, rgba(236, 72, 153, 0.15) 100%), linear-gradient(220deg, rgba(99, 102, 241, 0.12) 0%, transparent 45%, rgba(147, 51, 234, 0.12) 55%, transparent 100%)',
+              backgroundSize: '220% 220%'
+            }}
+          />
+          <motion.div
+            className="absolute -top-32 -left-24 w-96 h-96 bg-purple-500/25 rounded-full blur-3xl"
+            animate={{ scale: [1, 1.18, 1], opacity: [0.4, 0.7, 0.4] }}
+            transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="absolute -bottom-40 right-0 w-[28rem] h-[28rem] bg-fuchsia-500/20 rounded-full blur-3xl"
+            animate={{ scale: [1.05, 1.2, 1.05], opacity: [0.35, 0.6, 0.35] }}
+            transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        </div>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-gradient-to-br from-white/10 to-white/0 backdrop-blur-lg rounded-3xl p-8 border border-white/20"
+          className="mb-8"
         >
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Launch New Blockchain
-            </h1>
-            <p className="text-gray-400">Configure your custom Polygon-based chain</p>
-          </div>
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-purple-200/70 hover:text-purple-100 transition-colors font-mono group">
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+            Back to Dashboard
+          </Link>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="relative group overflow-hidden"
+        >
+          <div className="relative bg-gradient-to-br from-white/10 via-purple-500/10 to-white/5 backdrop-blur-2xl rounded-[34px] p-10 border border-purple-500/25 hover:border-purple-500/50 transition-all shadow-[0_30px_80px_rgba(124,58,237,0.35)]">
+            <motion.div
+              className="absolute inset-0 opacity-20"
+              animate={{ rotate: [0, 4, 0] }}
+              transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+              style={{
+                backgroundImage:
+                  'linear-gradient(100deg, rgba(168, 85, 247, 0.3) 0%, transparent 45%, rgba(236, 72, 153, 0.3) 100%)'
+              }}
+            />
+            <motion.div
+              className="absolute -inset-px rounded-[34px] border border-purple-400/25 pointer-events-none"
+              animate={{ opacity: [0.35, 0.6, 0.35] }}
+              transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="pointer-events-none absolute top-6 left-10 right-10 h-px rounded-full bg-gradient-to-r from-transparent via-purple-300/40 to-transparent"
+              animate={{ opacity: [0.2, 0.6, 0.2] }}
+              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="pointer-events-none absolute bottom-6 left-10 right-10 h-px rounded-full bg-gradient-to-r from-transparent via-fuchsia-300/40 to-transparent"
+              animate={{ opacity: [0.2, 0.6, 0.2], scaleX: [0.8, 1, 0.8] }}
+              transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+            />
+
+            <div className="relative z-10">
+              <div className="mb-10 flex flex-col gap-6">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                  <div className="flex items-center gap-4">
+                    <motion.div
+                      className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-indigo-500 flex items-center justify-center shadow-[0_10px_30px_rgba(124,58,237,0.45)]"
+                      animate={{ rotate: [0, -6, 6, 0] }}
+                      transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+                    >
+                      <Rocket className="w-8 h-8" />
+                      <motion.div
+                        className="absolute inset-0 rounded-2xl border border-white/30"
+                        animate={{ opacity: [0.4, 0.8, 0.4] }}
+                        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                      />
+                    </motion.div>
+                    <div>
+                      <h1 className="text-3xl md:text-4xl font-bold leading-tight">
+                        Launch Your Polygon Chain
+                      </h1>
+                      <p className="text-sm md:text-base text-purple-100/70 mt-2">
+                        Deploy validators, configure rollups, and mint your chain identity in minutes.
+                      </p>
+                    </div>
+                  </div>
+                  <motion.div
+                    className="px-4 py-3 rounded-full border border-purple-500/30 text-xs uppercase tracking-[0.3em] text-purple-100/70"
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    One click launchpad
+                  </motion.div>
+                </div>
+
+                <motion.div
+                  className="flex flex-col sm:flex-row gap-4"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  {[ 
+                    { icon: <Layers className="w-5 h-5" />, label: 'Rollup Ready' },
+                    { icon: <Cpu className="w-5 h-5" />, label: 'Validator Templates' },
+                    { icon: <Zap className="w-5 h-5" />, label: 'Gas Token Customizer' }
+                  ].map((pill, index) => (
+                    <motion.div
+                      key={index}
+                      className="flex-1 min-w-[140px] px-4 py-3 rounded-2xl border border-purple-500/25 bg-gradient-to-r from-purple-500/10 via-fuchsia-500/10 to-indigo-500/10 text-sm flex items-center gap-3 shadow-[0_15px_35px_rgba(124,58,237,0.2)]"
+                      whileHover={{ y: -4, scale: 1.02 }}
+                    >
+                      <span className="text-purple-200/90">{pill.icon}</span>
+                      <span className="text-purple-100/80 uppercase tracking-[0.2em] text-[11px]">{pill.label}</span>
+                    </motion.div>
+                  ))}
+                </motion.div>
+              </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium mb-2">Chain Name *</label>
+              <label className="block text-sm font-medium mb-2 text-purple-200/80">Chain Name *</label>
               <input
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500"
+              className="w-full bg-white/10 border border-purple-500/30 rounded-2xl px-4 py-3 focus:outline-none focus:border-purple-300 focus:ring-2 focus:ring-purple-400/30 transition-all text-white placeholder:text-purple-100/40"
                 placeholder="My Awesome Chain"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Chain Type *</label>
-              <div className="grid grid-cols-2 gap-4">
+              <label className="block text-sm font-medium mb-2 text-purple-200/80">Chain Type *</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {['public', 'private'].map((type) => (
-                  <button
+                  <motion.button
                     key={type}
                     type="button"
                     onClick={() => setFormData({ ...formData, chainType: type })}
-                    className={`p-4 rounded-xl border-2 transition-all ${
+                    whileHover={{ scale: 1.02, y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`relative flex-1 p-4 rounded-[26px] border transition-all overflow-hidden shadow-[0_16px_40px_rgba(124,58,237,0.18)] ${
                       formData.chainType === type
-                        ? 'border-purple-500 bg-purple-500/10'
-                        : 'border-white/20 hover:border-white/40'
+                        ? 'border-purple-400 bg-purple-500/20 shadow-[0_18px_38px_rgba(124,58,237,0.35)]'
+                        : 'border-purple-400/30 hover:border-purple-400/60 bg-white/10'
                     }`}
                   >
-                    <div className="font-semibold capitalize">{type}</div>
-                    <div className="text-sm text-gray-400">{type === 'public' ? 'Open to everyone' : 'Restricted access'}</div>
-                  </button>
+                    {formData.chainType === type && (
+                      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(168,85,247,0.4)_0.5px,transparent_0.5px),linear-gradient(to_bottom,rgba(236,72,153,0.4)_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-20" />
+                    )}
+                    <div className="relative z-10">
+                      <div className="font-semibold capitalize text-white">{type}</div>
+                      <div className="text-sm text-purple-100/60">{type === 'public' ? 'Open to everyone' : 'Restricted access'}</div>
+                    </div>
+                  </motion.button>
                 ))}
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Rollup Type *</label>
+              <label className="block text-sm font-medium mb-2 text-purple-200/80">Rollup Type *</label>
               <select
                 name="rollupType"
                 value={formData.rollupType}
                 onChange={handleChange}
-                className="w-full bg-slate-900/80 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 text-white appearance-none cursor-pointer"
+                className="w-full bg-white/10 border border-purple-500/30 rounded-2xl px-4 py-3 focus:outline-none focus:border-purple-300 focus:ring-2 focus:ring-purple-400/30 text-white appearance-none cursor-pointer transition-all"
                 style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23c084fc' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                   backgroundRepeat: 'no-repeat',
                   backgroundPosition: 'right 1rem center',
                   paddingRight: '2.5rem',
-                  backgroundColor: 'rgba(15, 23, 42, 0.8)'
                 }}
               >
-                <option value="zk-rollup" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>zkRollup (Recommended)</option>
-                <option value="optimistic-rollup" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>Optimistic Rollup</option>
-                <option value="validium" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>Validium</option>
+                <option value="zk-rollup" style={{ backgroundColor: '#1a1031', color: '#ffffff' }}>zkRollup (Recommended)</option>
+                <option value="optimistic-rollup" style={{ backgroundColor: '#1a1031', color: '#ffffff' }}>Optimistic Rollup</option>
+                <option value="validium" style={{ backgroundColor: '#1a1031', color: '#ffffff' }}>Validium</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Gas Token Symbol *</label>
+              <label className="block text-sm font-medium mb-2 text-purple-200/80">Gas Token Symbol *</label>
               <input
                 type="text"
                 name="gasToken"
                 value={formData.gasToken}
                 onChange={handleChange}
-                className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500"
+                className="w-full bg-white/10 border border-purple-500/30 rounded-2xl px-4 py-3 focus:outline-none focus:border-purple-300 focus:ring-2 focus:ring-purple-400/30 transition-all text-white placeholder:text-purple-100/40 uppercase"
                 placeholder="e.g., GAME, PAY, COIN"
                 maxLength={10}
                 required
@@ -665,13 +888,13 @@ export default function CreateChainPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Initial Validators *</label>
+              <label className="block text-sm font-medium mb-2 text-purple-200/80">Initial Validators *</label>
               <input
                 type="number"
                 name="initialValidators"
                 value={formData.initialValidators}
                 onChange={handleChange}
-                className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500"
+                className="w-full bg-white/10 border border-purple-500/30 rounded-2xl px-4 py-3 focus:outline-none focus:border-purple-300 focus:ring-2 focus:ring-purple-400/30 transition-all text-white placeholder:text-purple-100/40"
                 min="1"
                 max="100"
                 required
@@ -679,18 +902,19 @@ export default function CreateChainPage() {
             </div>
 
             {!isContractConfigured && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3">
-                <Info className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="font-bold text-red-400 mb-1">Chain Factory Contract Not Configured</h3>
-                  <p className="text-sm text-gray-300 mb-2">
+              <div className="relative bg-red-500/10 border border-red-500/30 rounded-lg p-4 flex items-start gap-3 overflow-hidden">
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,#ef4444_0.5px,transparent_0.5px),linear-gradient(to_bottom,#ef4444_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-10" />
+                <Info className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5 relative z-10" />
+                <div className="relative z-10">
+                  <h3 className="font-bold text-red-400 mb-1 font-mono">Chain Factory Contract Not Configured</h3>
+                  <p className="text-sm text-gray-300 mb-2 font-mono">
                     To enable on-chain registration, you need to deploy the ChainFactory contract and configure it.
                   </p>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-gray-400 font-mono">
                     <strong>Steps:</strong><br />
-                    1. Deploy the contract: <code className="bg-black/30 px-1 rounded">npm run deploy:amoy</code> (or <code className="bg-black/30 px-1 rounded">npm run deploy:polygon</code> for mainnet)<br />
+                    1. Deploy the contract: <code className="bg-slate-900/50 px-1 rounded border border-cyan-500/20">npm run deploy:amoy</code> (or <code className="bg-slate-900/50 px-1 rounded border border-cyan-500/20">npm run deploy:polygon</code> for mainnet)<br />
                     2. Copy the deployed contract address<br />
-                    3. Add <code className="bg-black/30 px-1 rounded">NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS=0x...</code> to <code className="bg-black/30 px-1 rounded">frontend/.env.local</code><br />
+                    3. Add <code className="bg-slate-900/50 px-1 rounded border border-cyan-500/20">NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS=0x...</code> to <code className="bg-slate-900/50 px-1 rounded border border-cyan-500/20">frontend/.env.local</code><br />
                     4. Restart your frontend server
                   </p>
                 </div>
@@ -698,11 +922,12 @@ export default function CreateChainPage() {
             )}
 
             {!isPolygonNetwork && isConnected && isContractConfigured && (
-              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex items-start gap-3">
-                <Info className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="font-bold text-yellow-400 mb-1">Switch to Polygon Network</h3>
-                  <p className="text-sm text-gray-300">
+              <div className="relative bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start gap-3 overflow-hidden">
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,#eab308_0.5px,transparent_0.5px),linear-gradient(to_bottom,#eab308_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-10" />
+                <Info className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5 relative z-10" />
+                <div className="relative z-10">
+                  <h3 className="font-bold text-yellow-400 mb-1 font-mono">Switch to Polygon Network</h3>
+                  <p className="text-sm text-gray-300 font-mono">
                     You need to be on Polygon Mainnet or Polygon Amoy Testnet to launch your chain. 
                     The network will be switched automatically when you submit.
                   </p>
@@ -711,44 +936,57 @@ export default function CreateChainPage() {
             )}
 
             {txHash && polygonScanUrl && (
-              <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                  <h3 className="font-bold text-green-400">Transaction Submitted!</h3>
+              <div className="relative bg-purple-500/10 border border-purple-500/40 rounded-[28px] p-5 overflow-hidden shadow-[0_12px_30px_rgba(124,58,237,0.25)]">
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(168,85,247,0.35)_0.5px,transparent_0.5px),linear-gradient(to_bottom,rgba(236,72,153,0.35)_0.5px,transparent_0.5px)] bg-[size:18px_18px] opacity-15" />
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 mb-2">
+                    <motion.div 
+                      className="w-2.5 h-2.5 bg-purple-300 rounded-full"
+                      animate={{ scale: [1, 1.6, 1], opacity: [1, 0.4, 1] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    />
+                    <h3 className="font-semibold text-purple-100 uppercase tracking-[0.3em] text-[12px]">Transaction Submitted</h3>
+                  </div>
+                  <p className="text-sm text-purple-100/70 mb-3">
+                    Your chain transaction is live on Polygon. Review the details on PolygonScan:
+                  </p>
+                  <a
+                    href={polygonScanUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-purple-100 hover:text-white transition-colors text-sm font-medium border border-purple-500/40 px-4 py-2 rounded-full hover:bg-purple-500/20"
+                  >
+                    View on PolygonScan
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                  <p className="text-xs text-purple-100/60 mt-3 break-all">
+                    {txHash}
+                  </p>
                 </div>
-                <p className="text-sm text-gray-300 mb-3">
-                  Your chain has been registered on Polygon blockchain. View it on PolygonScan:
-                </p>
-                <a
-                  href={polygonScanUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-green-400 hover:text-green-300 transition-colors text-sm font-medium"
-                >
-                  View on PolygonScan
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-                <p className="text-xs text-gray-400 mt-2 font-mono break-all">
-                  {txHash}
-                </p>
               </div>
             )}
 
-            <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-6">
-              <h3 className="font-bold mb-4">Estimated Costs</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Setup Fee</span>
-                  <span className="font-semibold">$499</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Monthly Hosting</span>
-                  <span className="font-semibold">$299/mo</span>
-                </div>
-                <div className="border-t border-white/10 pt-2 mt-2">
-                  <div className="flex justify-between font-bold text-lg">
-                    <span>Total</span>
-                    <span className="text-purple-400">$798</span>
+            <div className="relative bg-gradient-to-br from-white/10 via-purple-500/10 to-white/5 border border-purple-500/30 rounded-2xl p-6 overflow-hidden shadow-[0_12px_32px_rgba(124,58,237,0.25)]">
+              <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(168,85,247,0.3)_0.5px,transparent_0.5px),linear-gradient(to_bottom,rgba(236,72,153,0.3)_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-10 pointer-events-none" />
+              <div className="relative z-10">
+                <h3 className="font-semibold mb-4 text-purple-100 flex items-center gap-2 uppercase tracking-[0.3em] text-[12px]">
+                  <Zap className="w-5 h-5" />
+                  Estimated Costs
+                </h3>
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between text-purple-100/80">
+                    <span>Setup Fee</span>
+                    <span className="font-semibold text-white">$499</span>
+                  </div>
+                  <div className="flex justify-between text-purple-100/80">
+                    <span>Monthly Hosting</span>
+                    <span className="font-semibold text-white">$299/mo</span>
+                  </div>
+                  <div className="border-t border-purple-500/30 pt-3 mt-3">
+                    <div className="flex justify-between font-bold text-lg">
+                      <span className="text-purple-200">Total</span>
+                      <span className="text-purple-100">$798</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -757,26 +995,50 @@ export default function CreateChainPage() {
             <div className="flex gap-4">
               <Link
                 href="/dashboard"
-                className="flex-1 py-3 text-center rounded-xl border border-white/20 hover:bg-white/5 transition-all"
+                className="flex-1 py-3 text-center rounded-full border border-purple-500/30 hover:border-purple-400/60 hover:bg-purple-500/10 transition-all"
               >
                 Cancel
               </Link>
-              <button
+              <motion.button
                 type="submit"
                 disabled={loading}
-                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                whileHover={{ scale: loading ? 1 : 1.02 }}
+                whileTap={{ scale: loading ? 1 : 0.98 }}
+                className="relative flex-1 py-3 rounded-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-indigo-500 hover:from-purple-600 hover:via-fuchsia-600 hover:to-indigo-600 font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2 overflow-hidden group shadow-[0_15px_35px_rgba(124,58,237,0.35)]"
               >
-                {loading ? (
-                  'Creating...'
-                ) : (
-                  <>
-                    <Rocket className="w-5 h-5" />
-                    Launch Chain
-                  </>
-                )}
-              </button>
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-0 group-hover:opacity-100"
+                  animate={{
+                    backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                  }}
+                  style={{ backgroundSize: '200% 200%' }}
+                />
+                <span className="relative z-10 flex items-center gap-2">
+                  {loading ? (
+                    <>
+                      <motion.div
+                        className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="w-5 h-5" />
+                      Launch Chain
+                    </>
+                  )}
+                </span>
+              </motion.button>
             </div>
           </form>
+            </div>
+          </div>
         </motion.div>
       </div>
     </DashboardLayout>

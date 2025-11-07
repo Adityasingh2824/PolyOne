@@ -1,149 +1,145 @@
-import { useState, useEffect, useCallback } from 'react'
-import { web3Service } from '@/lib/web3'
+'use client'
 
-interface WalletState {
+import { useCallback, useEffect, useState } from 'react'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { useAccount, useBalance, useChainId, useDisconnect, useSwitchChain } from 'wagmi'
+import type { EIP1193Provider } from 'viem'
+
+import { PRIMARY_CHAIN_ID, getTokenSymbol } from '@/lib/chains'
+
+interface UseWalletResult {
   address: string | null
   chainId: number | null
   balance: string | null
+  tokenSymbol: string | null
   isConnected: boolean
   isConnecting: boolean
   error: string | null
   walletType: string | null
+  connect: () => Promise<void>
+  disconnect: () => Promise<void>
+  refreshBalance: () => Promise<void>
+  switchNetwork: (targetChainId?: number) => Promise<void>
+  getProvider: () => Promise<EIP1193Provider>
 }
 
-export function useWallet() {
-  const [state, setState] = useState<WalletState>({
-    address: null,
-    chainId: null,
-    balance: null,
-    isConnected: false,
-    isConnecting: false,
-    error: null,
-    walletType: null
+export function useWallet(): UseWalletResult {
+  const { address, status, connector } = useAccount()
+  const chainId = useChainId()
+  const { openConnectModal } = useConnectModal()
+  const { disconnectAsync } = useDisconnect()
+  const { switchChainAsync } = useSwitchChain()
+  const [lastError, setLastError] = useState<string | null>(null)
+
+  const {
+    data: balanceData,
+    refetch: refetchBalance
+  } = useBalance({
+    address,
+    query: {
+      enabled: Boolean(address)
+    }
   })
 
   const connect = useCallback(async () => {
-    setState(prev => ({ ...prev, isConnecting: true, error: null }))
-    
-    try {
-      const { address, chainId } = await web3Service.connectWallet()
-      const balance = await web3Service.getBalance(address)
-      
-      setState({
-        address,
-        chainId,
-        balance,
-        isConnected: true,
-        isConnecting: false,
-        error: null,
-        walletType: 'metamask'
-      })
-
-      // Save to localStorage
-      localStorage.setItem('walletConnected', 'true')
-      localStorage.setItem('walletAddress', address)
-      localStorage.setItem('walletType', 'metamask')
-    } catch (error: any) {
-      setState(prev => ({
-        ...prev,
-        isConnecting: false,
-        error: error.message
-      }))
-      throw error // Re-throw so caller can handle it
+    if (!openConnectModal) {
+      const message = 'Wallet modal is not available yet. Please try again in a moment.'
+      setLastError(message)
+      throw new Error(message)
     }
-  }, [])
 
-  const disconnect = useCallback(() => {
-    setState({
-      address: null,
-      chainId: null,
-      balance: null,
-      isConnected: false,
-      isConnecting: false,
-      error: null,
-      walletType: null
-    })
-    
-    localStorage.removeItem('walletConnected')
-    localStorage.removeItem('walletAddress')
-    localStorage.removeItem('walletType')
-  }, [])
+    setLastError(null)
+    openConnectModal()
+  }, [openConnectModal])
+
+  const disconnect = useCallback(async () => {
+    try {
+      await disconnectAsync()
+      setLastError(null)
+    } catch (error: any) {
+      const message = error?.message || 'Failed to disconnect wallet'
+      setLastError(message)
+      throw new Error(message)
+    }
+  }, [disconnectAsync])
 
   const refreshBalance = useCallback(async () => {
-    if (state.address) {
-      try {
-        const balance = await web3Service.getBalance(state.address)
-        setState(prev => ({ ...prev, balance }))
-      } catch (error) {
-        console.error('Failed to refresh balance:', error)
+    if (!address) return
+
+    try {
+      await refetchBalance()
+      setLastError(null)
+    } catch (error: any) {
+      const message = error?.message || 'Failed to refresh balance'
+      setLastError(message)
+    }
+  }, [address, refetchBalance])
+
+  const switchNetwork = useCallback(async (targetChainId: number = PRIMARY_CHAIN_ID) => {
+    if (!switchChainAsync) {
+      const message = 'Chain switching is not supported by the current wallet.'
+      setLastError(message)
+      throw new Error(message)
+    }
+
+    try {
+      await switchChainAsync({ chainId: targetChainId })
+      setLastError(null)
+    } catch (error: any) {
+      const message = error?.shortMessage || error?.message || 'Failed to switch network'
+      setLastError(message)
+      throw new Error(message)
+    }
+  }, [switchChainAsync])
+
+  const getProvider = useCallback(async (): Promise<EIP1193Provider> => {
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+      return (window as any).ethereum as EIP1193Provider
+    }
+
+    if (connector?.getProvider) {
+      const provider = await connector.getProvider()
+      if (provider) {
+        return provider as EIP1193Provider
       }
     }
-  }, [state.address])
 
-  // Auto-connect on mount if previously connected
+    const message = 'Wallet provider is not available. Please connect your wallet again.'
+    setLastError(message)
+    throw new Error(message)
+  }, [connector])
+
   useEffect(() => {
-    const wasConnected = localStorage.getItem('walletConnected')
-    if (wasConnected === 'true') {
-      connect()
+    if (typeof window === 'undefined') return
+
+    if (status === 'connected' && address) {
+      localStorage.setItem('walletConnected', 'true')
+      localStorage.setItem('walletAddress', address)
+      localStorage.setItem('walletType', connector?.name || 'wallet')
+    } else if (status === 'disconnected') {
+      localStorage.removeItem('walletConnected')
+      localStorage.removeItem('walletAddress')
+      localStorage.removeItem('walletType')
     }
-  }, [connect])
+  }, [status, address, connector?.name])
 
-  // Refresh balance periodically and on chain changes
-  useEffect(() => {
-    if (state.address && state.isConnected) {
-      // Refresh balance immediately
-      refreshBalance()
-      
-      // Set up interval to refresh balance every 30 seconds
-      const interval = setInterval(() => {
-        refreshBalance()
-      }, 30000)
-
-      return () => clearInterval(interval)
-    }
-  }, [state.address, state.isConnected, refreshBalance])
-
-  // Listen for account changes
-  useEffect(() => {
-    if (typeof window.ethereum !== 'undefined') {
-      const handleAccountsChanged = (accounts: string[]) => {
-        if (accounts.length === 0) {
-          disconnect()
-        } else {
-          connect()
-        }
-      }
-
-      const handleChainChanged = async () => {
-        // Refresh balance when chain changes
-        if (state.address) {
-          try {
-            await refreshBalance()
-          } catch (error) {
-            console.error('Failed to refresh balance on chain change:', error)
-          }
-        }
-        // Reload to update chainId
-        window.location.reload()
-      }
-
-      window.ethereum.on('accountsChanged', handleAccountsChanged)
-      window.ethereum.on('chainChanged', handleChainChanged)
-
-      return () => {
-        if (typeof window.ethereum !== 'undefined') {
-          window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
-          window.ethereum.removeListener('chainChanged', handleChainChanged)
-        }
-      }
-    }
-  }, [connect, disconnect])
+  const resolvedChainId = status === 'connected' ? chainId : null
+  const tokenSymbol = resolvedChainId ? getTokenSymbol(resolvedChainId) : null
 
   return {
-    ...state,
+    address: address ?? null,
+    chainId: resolvedChainId,
+    balance: balanceData?.formatted ?? null,
+    tokenSymbol,
+    isConnected: status === 'connected',
+    isConnecting: status === 'connecting',
+    error: lastError,
+    walletType: connector?.name ?? null,
     connect,
     disconnect,
-    refreshBalance
+    refreshBalance,
+    switchNetwork,
+    getProvider
   }
 }
 

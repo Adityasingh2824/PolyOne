@@ -3,12 +3,19 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
 
+import { Providers } from './providers'
+
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'PolyOne - The Incubator of the Polygon Ecosystem',
   description: 'Smart Contracts × Community. Launch your own Polygon-based blockchain with Juno-inspired design.',
   keywords: 'blockchain, polygon, zkEVM, CDK, enterprise, BaaS, web3, smart contracts',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg'
+  }
 }
 
 export default function RootLayout({
@@ -19,8 +26,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        {children}
-        <Toaster 
+        <Providers>
+          {children}
+          <Toaster 
           position="bottom-right"
           toastOptions={{
             duration: 4000,
@@ -46,6 +54,7 @@ export default function RootLayout({
             },
           }}
         />
+        </Providers>
       </body>
     </html>
   )
