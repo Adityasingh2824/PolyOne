@@ -61,3 +61,11 @@ temp/
 cache/
 
 .vercel
+
+# Markdown files
+*.md
+
+# Files containing mnemonics and sensitive data
+contract.env
+contract-info.json
+contract-info-v3.json
