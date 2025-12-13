@@ -72,13 +72,65 @@ async function main() {
     process.exit(1)
   }
 
-  // Deploy ChainFactory
-  console.log("\n🏗️  Deploying ChainFactory...")
+  // Deploy PolyOneChainFactory (new enhanced version)
+  console.log("\n🏗️  Deploying PolyOneChainFactory...")
+  const PolyOneChainFactory = await hre.ethers.getContractFactory("PolyOneChainFactory")
+  const polyOneChainFactory = await PolyOneChainFactory.deploy()
+  await polyOneChainFactory.waitForDeployment()
+  const polyOneChainFactoryAddress = await polyOneChainFactory.getAddress()
+  console.log("✅ PolyOneChainFactory deployed to:", polyOneChainFactoryAddress)
+
+  // Grant deployer admin role
+  const ADMIN_ROLE = await polyOneChainFactory.ADMIN_ROLE()
+  const grantAdminTx = await polyOneChainFactory.grantRole(ADMIN_ROLE, deployer.address)
+  await grantAdminTx.wait()
+  console.log("✅ Admin role granted to deployer")
+
+  // Deploy ValidatorRegistry
+  console.log("\n🏗️  Deploying ValidatorRegistry...")
+  const ValidatorRegistry = await hre.ethers.getContractFactory("ValidatorRegistry")
+  const validatorRegistry = await ValidatorRegistry.deploy()
+  await validatorRegistry.waitForDeployment()
+  const validatorRegistryAddress = await validatorRegistry.getAddress()
+  console.log("✅ ValidatorRegistry deployed to:", validatorRegistryAddress)
+
+  // Grant deployer admin role for ValidatorRegistry
+  const VALIDATOR_ADMIN_ROLE = await validatorRegistry.ADMIN_ROLE()
+  const grantValidatorAdminTx = await validatorRegistry.grantRole(VALIDATOR_ADMIN_ROLE, deployer.address)
+  await grantValidatorAdminTx.wait()
+  console.log("✅ ValidatorRegistry admin role granted to deployer")
+
+  // Deploy PolyOneBridge
+  console.log("\n🏗️  Deploying PolyOneBridge...")
+  const PolyOneBridge = await hre.ethers.getContractFactory("PolyOneBridge")
+  // Deploy with fee collector as deployer (can be changed later)
+  const polyOneBridge = await PolyOneBridge.deploy(deployer.address)
+  await polyOneBridge.waitForDeployment()
+  const polyOneBridgeAddress = await polyOneBridge.getAddress()
+  console.log("✅ PolyOneBridge deployed to:", polyOneBridgeAddress)
+  console.log("   Fee Collector:", deployer.address)
+
+  // Deploy PolyOneBilling
+  console.log("\n🏗️  Deploying PolyOneBilling...")
+  const PolyOneBilling = await hre.ethers.getContractFactory("PolyOneBilling")
+  const polyOneBilling = await PolyOneBilling.deploy()
+  await polyOneBilling.waitForDeployment()
+  const polyOneBillingAddress = await polyOneBilling.getAddress()
+  console.log("✅ PolyOneBilling deployed to:", polyOneBillingAddress)
+
+  // Grant deployer billing admin role
+  const BILLING_ADMIN_ROLE = await polyOneBilling.ADMIN_ROLE()
+  const grantBillingAdminTx = await polyOneBilling.grantRole(BILLING_ADMIN_ROLE, deployer.address)
+  await grantBillingAdminTx.wait()
+  console.log("✅ Billing admin role granted to deployer")
+
+  // Deploy legacy ChainFactory for backward compatibility (if needed)
+  console.log("\n🏗️  Deploying legacy ChainFactory (for backward compatibility)...")
   const ChainFactory = await hre.ethers.getContractFactory("ChainFactory")
   const chainFactory = await ChainFactory.deploy()
   await chainFactory.waitForDeployment()
   const chainFactoryAddress = await chainFactory.getAddress()
-  console.log("✅ ChainFactory deployed to:", chainFactoryAddress)
+  console.log("✅ Legacy ChainFactory deployed to:", chainFactoryAddress)
 
   // Deploy ChainRegistry
   console.log("\n🏗️  Deploying ChainRegistry...")
@@ -94,8 +146,20 @@ async function main() {
     chainId: hre.network.config.chainId,
     deployer: deployer.address,
     contracts: {
+      // New enhanced contracts
+      PolyOneChainFactory: polyOneChainFactoryAddress,
+      ValidatorRegistry: validatorRegistryAddress,
+      PolyOneBridge: polyOneBridgeAddress,
+      PolyOneBilling: polyOneBillingAddress,
+      // Legacy contracts (for backward compatibility)
       ChainFactory: chainFactoryAddress,
       ChainRegistry: chainRegistryAddress
+    },
+    roles: {
+      chainFactoryAdmin: deployer.address,
+      validatorRegistryAdmin: deployer.address,
+      billingAdmin: deployer.address,
+      bridgeFeeCollector: deployer.address
     },
     timestamp: new Date().toISOString(),
     blockNumber: await hre.ethers.provider.getBlockNumber()
@@ -124,9 +188,26 @@ async function main() {
   // Verification instructions
   if (hre.network.name !== "hardhat" && hre.network.name !== "localhost") {
     console.log("\n🔍 To verify contracts, run:")
+    console.log(`npx hardhat verify --network ${hre.network.name} ${polyOneChainFactoryAddress}`)
+    console.log(`npx hardhat verify --network ${hre.network.name} ${validatorRegistryAddress}`)
+    console.log(`npx hardhat verify --network ${hre.network.name} ${polyOneBridgeAddress} "${deployer.address}"`)
+    console.log(`npx hardhat verify --network ${hre.network.name} ${polyOneBillingAddress}`)
     console.log(`npx hardhat verify --network ${hre.network.name} ${chainFactoryAddress}`)
     console.log(`npx hardhat verify --network ${hre.network.name} ${chainRegistryAddress}`)
   }
+
+  // Print environment variables for frontend/backend
+  console.log("\n📝 Add these to your .env files:")
+  console.log("\n# Frontend (.env.local or .env)")
+  console.log(`NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS=${polyOneChainFactoryAddress}`)
+  console.log(`NEXT_PUBLIC_VALIDATOR_REGISTRY_ADDRESS=${validatorRegistryAddress}`)
+  console.log(`NEXT_PUBLIC_BRIDGE_ADDRESS=${polyOneBridgeAddress}`)
+  console.log(`NEXT_PUBLIC_BILLING_ADDRESS=${polyOneBillingAddress}`)
+  console.log(`\n# Backend (.env)`)
+  console.log(`CHAIN_FACTORY_ADDRESS=${polyOneChainFactoryAddress}`)
+  console.log(`VALIDATOR_REGISTRY_ADDRESS=${validatorRegistryAddress}`)
+  console.log(`BRIDGE_ADDRESS=${polyOneBridgeAddress}`)
+  console.log(`BILLING_ADDRESS=${polyOneBillingAddress}`)
 
   console.log("\n✨ Deployment complete!")
 }

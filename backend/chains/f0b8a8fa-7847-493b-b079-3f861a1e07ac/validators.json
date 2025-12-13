@@ -1,0 +1,20 @@
+[
+  {
+    "index": 0,
+    "address": "0x8CDc047202ed70261e8faB12B67e8AF22e96eD49",
+    "privateKey": "0xf9c5106a649dcd859579fc3c0cb5e80e838ec70f8dbbee49779d449d9a016e56",
+    "publicKey": "0x021f2b1e352e453b619bf3a81175713a63c47e5a8e152f849f11e27e024da76f9e"
+  },
+  {
+    "index": 1,
+    "address": "0x3c4a25666F783278e2FF5d4c3C3C82C901c02859",
+    "privateKey": "0x49af4837ea45b31f0447885619ac6db926868e81389c35a9c689b3d7026e0b44",
+    "publicKey": "0x03ee6118573aa9c370d982dab3cb0a5a4053bbac178cb811c1a007464af74f79ce"
+  },
+  {
+    "index": 2,
+    "address": "0x5dca8937c99D5985e704592fA2d0075d8b6B55e4",
+    "privateKey": "0xd1ac0ad689c0e23ec541e948b82e5377d8d0e2c436aa5c1a16e456288037a0db",
+    "publicKey": "0x03b1b1b12a641b525adb9793c20259cb506220dddb35bb392c63556a8f75c86458"
+  }
+]

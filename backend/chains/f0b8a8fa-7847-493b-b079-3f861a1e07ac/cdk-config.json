@@ -1,0 +1,25 @@
+{
+  "chainId": 3,
+  "chainName": "RustPad",
+  "rollupType": "zk-rollup",
+  "gasToken": "ZK",
+  "validators": 3,
+  "chainType": "public",
+  "validatorAccess": "public",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x..."
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "rollup",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00"
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": "f0b8a8fa-7847-493b-b079-3f861a1e07ac"
+  }
+}

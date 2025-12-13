@@ -1,0 +1,25 @@
+{
+  "chainId": 664799,
+  "chainName": "qwerty",
+  "rollupType": "zk-rollup",
+  "gasToken": "QWR",
+  "validators": 3,
+  "chainType": "public",
+  "validatorAccess": "public",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x..."
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "rollup",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00"
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": "8ff7e3be-a1c4-4b3e-8c18-664799b01c27"
+  }
+}

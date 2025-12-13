@@ -29,6 +29,8 @@ import {
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import DashboardLayout from '@/components/DashboardLayout'
+import ChainManagement from '@/components/ChainManagement'
+import ValidatorManagement from '@/components/ValidatorManagement'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import { useWallet } from '@/hooks/useWallet'
 import { PRIMARY_CHAIN_ID, polygonMainnet } from '@/lib/chains'
@@ -47,7 +49,7 @@ interface Transaction {
 export default function ChainDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { chainId: walletChainId } = useWallet()
+  const { chainId: walletChainId, address } = useWallet()
   const chainId = params.id as string
   const [chain, setChain] = useState<any>(null)
   const [metrics, setMetrics] = useState<any>(null)
@@ -78,35 +80,81 @@ export default function ChainDetailPage() {
   }, [chainId])
 
   const loadChainData = async () => {
-    if (!chainId) return
+    if (!chainId) {
+      setLoading(false)
+      return
+    }
     
     try {
-      const storedChains = JSON.parse(localStorage.getItem('userChains') || '[]')
-      let foundChain = storedChains.find((c: any) => c.id === chainId)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
       
-      if (!foundChain) {
-        foundChain = storedChains.find((c: any) => {
-          const cId = String(c.id || '')
-          return cId === chainId || decodeURIComponent(cId) === chainId || cId === decodeURIComponent(chainId)
-        })
+      // First try API (most reliable source)
+      try {
+        // Build URL with wallet address query param for development
+        const url = address 
+          ? `${apiUrl}/api/chains/${encodeURIComponent(chainId)}?walletAddress=${encodeURIComponent(address)}`
+          : `${apiUrl}/api/chains/${encodeURIComponent(chainId)}`;
+        
+        console.log('📡 Fetching chain from API:', url);
+        
+        // Try without auth first (for development)
+        let response = await fetch(url)
+        
+        // If 401, try with auth token
+        if (response.status === 401) {
+          const authToken = localStorage.getItem('authToken')
+          if (authToken) {
+            response = await fetch(`${apiUrl}/api/chains/${encodeURIComponent(chainId)}`, {
+              headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+              }
+            })
+          }
+        }
+        
+        if (response.ok) {
+          const apiChain = await response.json()
+          setChain(apiChain)
+          // Save to localStorage for offline access
+          const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
+          const existingIndex = existingChains.findIndex((c: any) => c.id === apiChain.id)
+          if (existingIndex >= 0) {
+            existingChains[existingIndex] = apiChain
+          } else {
+            existingChains.push(apiChain)
+          }
+          localStorage.setItem('userChains', JSON.stringify(existingChains))
+          setLoading(false)
+          return
+        } else if (response.status === 404) {
+          console.warn('Chain not found in API, checking localStorage')
+        } else if (response.status === 401) {
+          console.warn('Unauthorized - chain might be in localStorage only')
+        }
+      } catch (apiError) {
+        console.warn('API fetch failed, trying localStorage:', apiError)
       }
+      
+      // Fallback to localStorage
+      const storedChains = JSON.parse(localStorage.getItem('userChains') || '[]')
+      let foundChain = storedChains.find((c: any) => {
+        const cId = String(c.id || '')
+        return cId === chainId || 
+               decodeURIComponent(cId) === chainId || 
+               cId === decodeURIComponent(chainId) ||
+               cId === String(chainId)
+      })
       
       if (foundChain) {
         setChain(foundChain)
       } else {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
-        try {
-          const response = await fetch(`${apiUrl}/api/chains/${chainId}`)
-          if (response.ok) {
-            const data = await response.json()
-            setChain(data)
-          }
-        } catch (error) {
-          console.error('Failed to fetch chain:', error)
-        }
+        // Chain not found anywhere
+        setChain(null)
       }
     } catch (error) {
       console.error('Error loading chain:', error)
+      setChain(null)
     } finally {
       setLoading(false)
     }
@@ -114,7 +162,7 @@ export default function ChainDetailPage() {
 
   const loadMetrics = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
       const response = await fetch(`${apiUrl}/api/monitoring/${chainId}/metrics`)
       if (response.ok) {
         const data = await response.json()
@@ -145,7 +193,7 @@ export default function ChainDetailPage() {
 
   const loadAnalytics = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
       const response = await fetch(`${apiUrl}/api/monitoring/${chainId}/analytics`)
       if (response.ok) {
         const data = await response.json()
@@ -783,50 +831,66 @@ export default function ChainDetailPage() {
           </div>
         </motion.div>
 
-        {/* Validator Info */}
-        {chain.validatorKeys && chain.validatorKeys.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="relative group overflow-hidden"
-          >
-            <div className="relative bg-gradient-to-br from-slate-900/80 to-slate-800/60 backdrop-blur-lg rounded-2xl p-6 border border-purple-500/30 hover:border-purple-500/50 transition-all shadow-xl">
-              {/* Tech grid overlay */}
-              <div className="absolute inset-0 bg-[linear-gradient(to_right,#a855f7_0.5px,transparent_0.5px),linear-gradient(to_bottom,#a855f7_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-15 pointer-events-none" />
-              
-              {/* Tech corners */}
-              <div className="absolute top-0 right-0 w-16 h-16 border-t-2 border-r-2 border-purple-500/30 rounded-bl-2xl pointer-events-none" />
-              <div className="absolute bottom-0 left-0 w-16 h-16 border-b-2 border-l-2 border-purple-500/30 rounded-tr-2xl pointer-events-none" />
-              
-              <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center border border-purple-400/30">
-                    <Server className="w-4 h-4 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold font-mono text-white">
-                    Validators ({chain.validatorKeys.length})
-                  </h3>
+        {/* Chain Management Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="relative group overflow-hidden"
+        >
+          <div className="relative bg-gradient-to-br from-slate-900/80 to-slate-800/60 backdrop-blur-lg rounded-2xl p-6 border border-cyan-500/30 hover:border-cyan-500/50 transition-all shadow-xl">
+            {/* Tech grid overlay */}
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#06b6d4_0.5px,transparent_0.5px),linear-gradient(to_bottom,#06b6d4_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-15 pointer-events-none" />
+            
+            {/* Tech corners */}
+            <div className="absolute top-0 right-0 w-16 h-16 border-t-2 border-r-2 border-cyan-500/30 rounded-bl-2xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-16 h-16 border-b-2 border-l-2 border-cyan-500/30 rounded-tr-2xl pointer-events-none" />
+            
+            <div className="relative z-10">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center border border-cyan-400/30">
+                  <Network className="w-4 h-4 text-white" />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {chain.validatorKeys.map((validator: string, index: number) => (
-                    <div
-                      key={index}
-                      className="relative bg-slate-900/50 rounded-xl p-4 border border-purple-500/20 hover:border-purple-500/40 transition-all"
-                    >
-                      <div className="absolute inset-0 bg-[linear-gradient(to_right,#a855f7_0.5px,transparent_0.5px),linear-gradient(to_bottom,#a855f7_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-5 pointer-events-none" />
-                      <div className="relative z-10 flex items-center justify-between mb-2">
-                        <div className="text-sm font-semibold font-mono text-white">Validator #{index + 1}</div>
-                        <CheckCircle className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div className="font-mono text-xs text-gray-400 truncate">{validator}</div>
-                    </div>
-                  ))}
-                </div>
+                <h3 className="text-xl font-bold font-mono text-white">Chain Management</h3>
               </div>
+              <ChainManagement 
+                chainId={chainId} 
+                chainStatus={chain.status}
+                onStatusChange={() => {
+                  loadChainData()
+                  loadMetrics()
+                }}
+              />
             </div>
-          </motion.div>
-        )}
+          </div>
+        </motion.div>
+
+        {/* Validator Management Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="relative group overflow-hidden"
+        >
+          <div className="relative bg-gradient-to-br from-slate-900/80 to-slate-800/60 backdrop-blur-lg rounded-2xl p-6 border border-purple-500/30 hover:border-purple-500/50 transition-all shadow-xl">
+            {/* Tech grid overlay */}
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#a855f7_0.5px,transparent_0.5px),linear-gradient(to_bottom,#a855f7_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-15 pointer-events-none" />
+            
+            {/* Tech corners */}
+            <div className="absolute top-0 right-0 w-16 h-16 border-t-2 border-r-2 border-purple-500/30 rounded-bl-2xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-16 h-16 border-b-2 border-l-2 border-purple-500/30 rounded-tr-2xl pointer-events-none" />
+            
+            <div className="relative z-10">
+              <ValidatorManagement 
+                chainId={chainId}
+                onUpdate={() => {
+                  loadChainData()
+                  loadMetrics()
+                }}
+              />
+            </div>
+          </div>
+        </motion.div>
       </div>
     </DashboardLayout>
   )

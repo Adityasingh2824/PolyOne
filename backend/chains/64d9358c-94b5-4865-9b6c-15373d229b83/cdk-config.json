@@ -1,0 +1,25 @@
+{
+  "chainId": 15373,
+  "chainName": "Elephant ",
+  "rollupType": "optimistic-rollup",
+  "gasToken": "ELE",
+  "validators": 28,
+  "chainType": "public",
+  "validatorAccess": "public",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x..."
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "rollup",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00"
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": "64d9358c-94b5-4865-9b6c-15373d229b83"
+  }
+}

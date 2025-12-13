@@ -1,14 +1,183 @@
 {
   "templates": [
     {
-      "id": "zkrollup-public",
-      "name": "zkRollup Public Chain",
-      "description": "High-security public chain with zero-knowledge proofs",
+      "id": "gaming-optimized",
+      "name": "Gaming Chain",
+      "category": "gaming",
+      "description": "High-performance chain optimized for gaming applications with low latency and high throughput",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
       "recommended": true,
+      "tags": ["gaming", "low-latency", "high-throughput", "optimistic"],
+      "icon": "🎮",
+      "config": {
+        "chainType": "public",
+        "rollupType": "optimistic-rollup",
+        "validatorAccess": "public",
+        "gasToken": "POL",
+        "initialValidators": 5,
+        "blockTime": 1,
+        "gasLimit": 50000000,
+        "consensus": "PoS",
+        "dataAvailability": "rollup",
+        "features": {
+          "fastFinality": true,
+          "lowGasCosts": true,
+          "highTPS": true,
+          "gamingOptimized": true
+        }
+      },
+      "pricing": {
+        "setupFee": 399,
+        "monthlyHosting": 249,
+        "validatorCost": 40
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "defi-zkrollup",
+      "name": "DeFi Chain",
+      "category": "defi",
+      "description": "Secure zkRollup chain optimized for DeFi applications with instant finality",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": true,
+      "tags": ["defi", "security", "zk-rollup", "instant-finality"],
+      "icon": "💱",
       "config": {
         "chainType": "public",
         "rollupType": "zk-rollup",
         "validatorAccess": "public",
+        "gasToken": "POL",
+        "initialValidators": 7,
+        "blockTime": 2,
+        "gasLimit": 30000000,
+        "consensus": "PoS",
+        "dataAvailability": "rollup",
+        "features": {
+          "instantFinality": true,
+          "highSecurity": true,
+          "defiOptimized": true,
+          "bridgeSupport": true
+        }
+      },
+      "pricing": {
+        "setupFee": 599,
+        "monthlyHosting": 399,
+        "validatorCost": 60
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "nft-marketplace",
+      "name": "NFT Marketplace Chain",
+      "category": "nft",
+      "description": "Optimized chain for NFT marketplaces with low minting costs and fast transactions",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": true,
+      "tags": ["nft", "marketplace", "low-cost", "fast"],
+      "icon": "🖼️",
+      "config": {
+        "chainType": "public",
+        "rollupType": "optimistic-rollup",
+        "validatorAccess": "public",
+        "gasToken": "POL",
+        "initialValidators": 5,
+        "blockTime": 1,
+        "gasLimit": 40000000,
+        "consensus": "PoS",
+        "dataAvailability": "rollup",
+        "features": {
+          "lowMintingCosts": true,
+          "fastTransactions": true,
+          "nftOptimized": true,
+          "metadataSupport": true
+        }
+      },
+      "pricing": {
+        "setupFee": 349,
+        "monthlyHosting": 199,
+        "validatorCost": 35
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "enterprise-zkrollup",
+      "name": "Enterprise Chain",
+      "category": "enterprise",
+      "description": "Full-featured enterprise chain with advanced security, governance, and SLA guarantees",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": true,
+      "tags": ["enterprise", "security", "governance", "sla"],
+      "icon": "🏢",
+      "config": {
+        "chainType": "permissioned",
+        "rollupType": "zk-rollup",
+        "validatorAccess": "permissioned",
+        "gasToken": "POL",
+        "initialValidators": 10,
+        "blockTime": 2,
+        "gasLimit": 40000000,
+        "consensus": "PoA",
+        "dataAvailability": "rollup",
+        "features": {
+          "customGovernance": true,
+          "privateTransactions": true,
+          "advancedMonitoring": true,
+          "slaGuarantees": true,
+          "compliance": true
+        }
+      },
+      "pricing": {
+        "setupFee": 2999,
+        "monthlyHosting": 1499,
+        "validatorCost": 150
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "zkrollup-public",
+      "name": "zkRollup Public Chain",
+      "category": "general",
+      "description": "High-security public chain with zero-knowledge proofs",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": true,
+      "tags": ["public", "zk-rollup", "security"],
+      "icon": "🔒",
+      "config": {
+        "chainType": "public",
+        "rollupType": "zk-rollup",
+        "validatorAccess": "public",
+        "gasToken": "POL",
+        "initialValidators": 3,
         "blockTime": 2,
         "gasLimit": 20000000,
         "consensus": "PoS",
@@ -18,16 +187,31 @@
         "setupFee": 499,
         "monthlyHosting": 299,
         "validatorCost": 50
-      }
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
     },
     {
       "id": "validium-private",
       "name": "Validium Private Chain",
+      "category": "privacy",
       "description": "Off-chain data availability for maximum privacy",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": false,
+      "tags": ["private", "validium", "privacy"],
+      "icon": "🔐",
       "config": {
         "chainType": "private",
         "rollupType": "validium",
         "validatorAccess": "permissioned",
+        "gasToken": "POL",
+        "initialValidators": 5,
         "blockTime": 1,
         "gasLimit": 30000000,
         "consensus": "PoA",
@@ -37,51 +221,255 @@
         "setupFee": 999,
         "monthlyHosting": 599,
         "validatorCost": 100
-      }
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
     },
     {
-      "id": "optimistic-gaming",
-      "name": "Optimistic Rollup for Gaming",
-      "description": "Low-cost, high-throughput chain optimized for gaming",
+      "id": "gaming-ultra-fast",
+      "name": "Ultra-Fast Gaming Chain",
+      "category": "gaming",
+      "description": "Maximum performance gaming chain with sub-second block times and ultra-low gas costs",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": true,
+      "tags": ["gaming", "ultra-fast", "sub-second", "performance"],
+      "icon": "⚡",
       "config": {
         "chainType": "public",
         "rollupType": "optimistic-rollup",
         "validatorAccess": "public",
-        "blockTime": 1,
-        "gasLimit": 50000000,
+        "gasToken": "POL",
+        "initialValidators": 7,
+        "blockTime": 0.5,
+        "gasLimit": 60000000,
         "consensus": "PoS",
-        "dataAvailability": "rollup"
+        "dataAvailability": "rollup",
+        "features": {
+          "ultraFastFinality": true,
+          "minimalGasCosts": true,
+          "extremeTPS": true,
+          "gamingOptimized": true,
+          "realTimeOptimized": true
+        }
       },
       "pricing": {
-        "setupFee": 399,
-        "monthlyHosting": 249,
-        "validatorCost": 40
-      }
+        "setupFee": 499,
+        "monthlyHosting": 349,
+        "validatorCost": 50
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
     },
     {
-      "id": "enterprise-zkrollup",
-      "name": "Enterprise zkRollup",
-      "description": "Full-featured enterprise chain with advanced security",
+      "id": "defi-lending",
+      "name": "DeFi Lending Chain",
+      "category": "defi",
+      "description": "Specialized chain for DeFi lending protocols with optimized interest rate calculations",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": false,
+      "tags": ["defi", "lending", "interest-rates", "zk-rollup"],
+      "icon": "💰",
+      "config": {
+        "chainType": "public",
+        "rollupType": "zk-rollup",
+        "validatorAccess": "public",
+        "gasToken": "POL",
+        "initialValidators": 5,
+        "blockTime": 2,
+        "gasLimit": 35000000,
+        "consensus": "PoS",
+        "dataAvailability": "rollup",
+        "features": {
+          "instantFinality": true,
+          "lendingOptimized": true,
+          "interestRateSupport": true,
+          "collateralManagement": true
+        }
+      },
+      "pricing": {
+        "setupFee": 699,
+        "monthlyHosting": 449,
+        "validatorCost": 70
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "nft-gaming",
+      "name": "NFT Gaming Chain",
+      "category": "gaming",
+      "description": "Perfect for play-to-earn games with NFT integration and low transaction costs",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": true,
+      "tags": ["gaming", "nft", "play-to-earn", "p2e"],
+      "icon": "🎯",
+      "config": {
+        "chainType": "public",
+        "rollupType": "optimistic-rollup",
+        "validatorAccess": "public",
+        "gasToken": "POL",
+        "initialValidators": 6,
+        "blockTime": 1,
+        "gasLimit": 45000000,
+        "consensus": "PoS",
+        "dataAvailability": "rollup",
+        "features": {
+          "nftSupport": true,
+          "gamingOptimized": true,
+          "lowMintingCosts": true,
+          "fastTransactions": true,
+          "p2eOptimized": true
+        }
+      },
+      "pricing": {
+        "setupFee": 449,
+        "monthlyHosting": 279,
+        "validatorCost": 45
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "enterprise-hybrid",
+      "name": "Enterprise Hybrid Chain",
+      "category": "enterprise",
+      "description": "Hybrid public-private chain for enterprise use cases requiring both transparency and privacy",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": false,
+      "tags": ["enterprise", "hybrid", "privacy", "transparency"],
+      "icon": "🔗",
       "config": {
         "chainType": "permissioned",
         "rollupType": "zk-rollup",
         "validatorAccess": "permissioned",
+        "gasToken": "POL",
+        "initialValidators": 8,
         "blockTime": 2,
-        "gasLimit": 40000000,
+        "gasLimit": 35000000,
         "consensus": "PoA",
         "dataAvailability": "rollup",
         "features": {
-          "customGovernance": true,
-          "privateTransactions": true,
-          "advancedMonitoring": true,
-          "slaGuarantees": true
+          "hybridMode": true,
+          "selectivePrivacy": true,
+          "enterpriseGovernance": true,
+          "compliance": true
         }
       },
       "pricing": {
-        "setupFee": 2999,
-        "monthlyHosting": 1499,
-        "validatorCost": 150
-      }
+        "setupFee": 1999,
+        "monthlyHosting": 999,
+        "validatorCost": 120
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "social-media-chain",
+      "name": "Social Media Chain",
+      "category": "general",
+      "description": "Optimized for social media platforms with high transaction volume and low costs",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": false,
+      "tags": ["social", "high-volume", "low-cost", "optimistic"],
+      "icon": "📱",
+      "config": {
+        "chainType": "public",
+        "rollupType": "optimistic-rollup",
+        "validatorAccess": "public",
+        "gasToken": "POL",
+        "initialValidators": 5,
+        "blockTime": 1,
+        "gasLimit": 50000000,
+        "consensus": "PoS",
+        "dataAvailability": "rollup",
+        "features": {
+          "highVolume": true,
+          "lowCosts": true,
+          "socialOptimized": true,
+          "contentSupport": true
+        }
+      },
+      "pricing": {
+        "setupFee": 299,
+        "monthlyHosting": 199,
+        "validatorCost": 30
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "supply-chain",
+      "name": "Supply Chain Chain",
+      "category": "enterprise",
+      "description": "Blockchain for supply chain management with traceability and transparency features",
+      "author": "PolyOne",
+      "isOfficial": true,
+      "isCommunity": false,
+      "recommended": false,
+      "tags": ["supply-chain", "traceability", "enterprise", "transparency"],
+      "icon": "📦",
+      "config": {
+        "chainType": "permissioned",
+        "rollupType": "zk-rollup",
+        "validatorAccess": "permissioned",
+        "gasToken": "POL",
+        "initialValidators": 7,
+        "blockTime": 2,
+        "gasLimit": 30000000,
+        "consensus": "PoA",
+        "dataAvailability": "rollup",
+        "features": {
+          "traceability": true,
+          "transparency": true,
+          "enterpriseReady": true,
+          "auditTrail": true
+        }
+      },
+      "pricing": {
+        "setupFee": 2499,
+        "monthlyHosting": 1299,
+        "validatorCost": 140
+      },
+      "stats": {
+        "deployments": 0,
+        "rating": 0,
+        "reviews": 0
+      },
+      "createdAt": "2025-01-01T00:00:00Z"
     }
   ],
   "features": {

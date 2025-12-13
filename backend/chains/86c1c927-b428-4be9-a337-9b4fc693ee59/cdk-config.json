@@ -1,0 +1,25 @@
+{
+  "chainId": 9,
+  "chainName": "Ant",
+  "rollupType": "validium",
+  "gasToken": "ANT",
+  "validators": 36,
+  "chainType": "public",
+  "validatorAccess": "public",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x..."
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "validium",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00"
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": "86c1c927-b428-4be9-a337-9b4fc693ee59"
+  }
+}

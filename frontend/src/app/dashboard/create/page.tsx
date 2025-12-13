@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Rocket, Info, ExternalLink, Network, Cpu, Layers, Zap } from 'lucide-react'
+import { ArrowLeft, Rocket, Info, ExternalLink, Network, Cpu, Layers, Zap, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -11,14 +11,7 @@ import DashboardLayout from '@/components/DashboardLayout'
 import { useWallet } from '@/hooks/useWallet'
 import { ethers } from 'ethers'
 import { PRIMARY_CHAIN_ID, polygonMainnet } from '@/lib/chains'
-
-const CHAIN_FACTORY_ABI = [
-  "function createChain(string _name, string _chainType, string _rollupType, string _gasToken, uint256 _validators, string _rpcUrl, string _explorerUrl) external returns (uint256)",
-  "function getChain(uint256 _chainId) external view returns (tuple(uint256 id, address owner, string name, string chainType, string rollupType, string gasToken, uint256 validators, uint256 createdAt, bool isActive, string rpcUrl, string explorerUrl))",
-  "function getUserChains(address _user) external view returns (uint256[])",
-  "function getTotalChains() external view returns (uint256)",
-  "event ChainCreated(uint256 indexed chainId, address indexed owner, string name, string chainType, string rollupType)"
-]
+import { getChainFactoryContract, CONTRACT_ADDRESSES, POLYONE_CHAIN_FACTORY_ABI, LEGACY_CHAIN_FACTORY_ABI } from '@/lib/contracts'
 
 export default function CreateChainPage() {
   const router = useRouter()
@@ -51,7 +44,7 @@ export default function CreateChainPage() {
   }
 
   // Check if contract is configured
-  const contractAddress = process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS
+  const contractAddress = CONTRACT_ADDRESSES.CHAIN_FACTORY
   const isContractConfigured = contractAddress && contractAddress.trim() !== ''
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -111,12 +104,19 @@ export default function CreateChainPage() {
     setPolygonScanUrl(null)
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
       // Step 1: Create chain on blockchain first (REQUIRED)
       const eip1193Provider = await getProvider()
       const provider = new ethers.BrowserProvider(eip1193Provider)
       const signer = await provider.getSigner()
+      const fetchLegacyGasPrice = async (): Promise<bigint> => {
+        const gasPriceHex = await provider.send('eth_gasPrice', [])
+        if (!gasPriceHex) {
+          throw new Error('Unable to fetch gas price from provider')
+        }
+        return BigInt(gasPriceHex)
+      }
       
       // Validate contract address format
       if (!ethers.isAddress(contractAddress)) {
@@ -131,17 +131,30 @@ export default function CreateChainPage() {
       console.log('Contract code found at address:', contractAddress)
 
       // Test contract connection by calling a view function
-      const contract = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, provider)
+      // Try new contract first, fallback to legacy
+      let contract
+      let contractWithSigner
+      let contractABI = POLYONE_CHAIN_FACTORY_ABI
+      
       try {
+        contract = new ethers.Contract(contractAddress, POLYONE_CHAIN_FACTORY_ABI, provider)
         const totalChains = await contract.getTotalChains()
         console.log('Contract connection test successful. Total chains:', totalChains.toString())
+        contractWithSigner = new ethers.Contract(contractAddress, POLYONE_CHAIN_FACTORY_ABI, signer)
       } catch (testError: any) {
-        console.warn('Contract connection test failed:', testError)
-        // Don't throw, just log - the contract might still work for write operations
+        console.warn('New contract ABI failed, trying legacy:', testError)
+        // Fallback to legacy contract
+        contract = new ethers.Contract(contractAddress, LEGACY_CHAIN_FACTORY_ABI, provider)
+        contractABI = LEGACY_CHAIN_FACTORY_ABI
+        try {
+          const totalChains = await contract.getTotalChains()
+          console.log('Legacy contract connection successful. Total chains:', totalChains.toString())
+        } catch (legacyError: any) {
+          console.warn('Legacy contract connection test failed:', legacyError)
+          // Don't throw, just log - the contract might still work for write operations
+        }
+        contractWithSigner = new ethers.Contract(contractAddress, LEGACY_CHAIN_FACTORY_ABI, signer)
       }
-
-      // Create contract with signer for write operations
-      const contractWithSigner = new ethers.Contract(contractAddress, CHAIN_FACTORY_ABI, signer)
 
       // Generate temporary URLs (will be updated after backend deployment)
       const tempChainId = `temp-${Date.now()}`
@@ -230,57 +243,32 @@ export default function CreateChainPage() {
         throw new Error(gasErrorMessage)
       }
 
-      // Get fee data & detect EIP-1559 support
-      const [feeData, latestBlock] = await Promise.all([
-        provider.getFeeData(),
-        provider.getBlock('latest')
-      ])
-      const supportsEip1559 = latestBlock?.baseFeePerGas !== null && latestBlock?.baseFeePerGas !== undefined
-      console.log('Fee data:', {
-        gasPrice: feeData.gasPrice?.toString(),
-        maxFeePerGas: feeData.maxFeePerGas?.toString(),
-        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas?.toString(),
-        supportsEip1559
-      })
-
-      // Send transaction - try simpler approach first
+      // ALWAYS use legacy transactions (type 0) for maximum compatibility
+      // Many networks and RPC providers don't support EIP-1559 properly
       let tx
-      let legacyGasPrice: bigint | null = null
+      let legacyGasPrice: bigint
+      
       try {
         toast.loading('📤 Sending transaction...', { id: 'blockchain-tx' })
         
-        // Use populateTransaction and sendTransaction for more control
+        // Get legacy gas price
+        legacyGasPrice = await fetchLegacyGasPrice()
+        console.log('Using legacy gas price:', legacyGasPrice.toString())
+        
+        // Force legacy transaction (type 0) - remove all EIP-1559 fields
         populatedTx.gasLimit = gasEstimate
-
-        if (supportsEip1559 && feeData.maxFeePerGas) {
-          // Ensure type 2 (EIP-1559) transaction
-          populatedTx.type = 2
-          populatedTx.maxFeePerGas = feeData.maxFeePerGas
-          populatedTx.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? feeData.maxFeePerGas / 2n
-          delete populatedTx.gasPrice
-        } else {
-          // Force legacy transaction params
-          populatedTx.type = 0
-          legacyGasPrice = feeData.gasPrice ?? await provider.getGasPrice()
-          populatedTx.gasPrice = legacyGasPrice
-          delete populatedTx.maxFeePerGas
-          delete populatedTx.maxPriorityFeePerGas
-        }
+        populatedTx.type = 0
+        populatedTx.gasPrice = legacyGasPrice
+        delete populatedTx.maxFeePerGas
+        delete populatedTx.maxPriorityFeePerGas
 
         const txRequest: any = {
           to: populatedTx.to,
           data: populatedTx.data,
           gasLimit: populatedTx.gasLimit,
+          gasPrice: legacyGasPrice,
+          type: 0, // Explicitly set to legacy
           value: populatedTx.value ?? 0
-        }
-
-        if (supportsEip1559 && feeData.maxFeePerGas) {
-          txRequest.type = 2
-          txRequest.maxFeePerGas = populatedTx.maxFeePerGas
-          txRequest.maxPriorityFeePerGas = populatedTx.maxPriorityFeePerGas
-        } else {
-          txRequest.type = 0
-          txRequest.gasPrice = legacyGasPrice ?? feeData.gasPrice ?? await provider.getGasPrice()
         }
 
         console.log('Sending transaction with params:', {
@@ -288,12 +276,26 @@ export default function CreateChainPage() {
           data: txRequest.data?.slice(0, 20) + '...',
           gasLimit: txRequest.gasLimit?.toString(),
           type: txRequest.type,
-          maxFeePerGas: txRequest.maxFeePerGas?.toString(),
-          gasPrice: txRequest.gasPrice?.toString()
+          gasPrice: txRequest.gasPrice?.toString(),
+          value: txRequest.value?.toString()
         })
 
-        // Try sending using signer.sendTransaction first
-        tx = await signer.sendTransaction(txRequest)
+        // Send transaction - use contract method directly for better compatibility
+        // This lets ethers handle the transaction format automatically
+        tx = await contractWithSigner.createChain(
+          txParams.name,
+          txParams.chainType,
+          txParams.rollupType,
+          txParams.gasToken,
+          txParams.validators,
+          txParams.rpcUrl,
+          txParams.explorerUrl,
+          {
+            gasLimit: gasEstimate,
+            gasPrice: legacyGasPrice,
+            type: 0 // Force legacy transaction
+          }
+        )
         console.log('Transaction sent:', tx.hash)
       } catch (txError: any) {
         console.error('Transaction send error:', txError)
@@ -302,51 +304,14 @@ export default function CreateChainPage() {
           message: txError.message,
           reason: txError.reason,
           data: txError.data,
-          error: txError.error,
-          action: txError.action,
-          transaction: txError.transaction
+          error: txError.error
         })
         
-        const eip1559Rejected =
-          txError?.code === -32602 ||
-          txError?.error?.code === -32602 ||
-          txError?.message?.toLowerCase()?.includes('does not support eip-1559') ||
-          txError?.error?.message?.toLowerCase()?.includes('does not support eip-1559')
-
-        if (eip1559Rejected) {
+        // If transaction failed, try one more time with explicit legacy format
+        if (!tx) {
           try {
-            console.warn('RPC rejected EIP-1559 tx; retrying as legacy type-0 transaction')
-            const legacyGas = legacyGasPrice ?? feeData.gasPrice ?? (await provider.getGasPrice())
-            const legacyTx = {
-              to: populatedTx.to,
-              data: populatedTx.data,
-              gasLimit: populatedTx.gasLimit,
-              gasPrice: legacyGas,
-              type: 0,
-              value: populatedTx.value ?? 0
-            }
-            tx = await signer.sendTransaction(legacyTx)
-            console.log('Legacy transaction sent:', tx.hash)
-          } catch (legacyError) {
-            console.error('Legacy retry failed:', legacyError)
-          }
-        }
-
-        // Try fallback method if direct sendTransaction failed
-        if (!tx && (txError.code === -32603 || txError.error?.code === -32603)) {
-          console.log('Attempting fallback method (contract method call)...')
-          try {
-            // Fallback: use contract method directly (let ethers handle everything)
-            const txOverrides: any = {
-              gasLimit: gasEstimate
-            }
-            if (!supportsEip1559) {
-              txOverrides.gasPrice = legacyGasPrice ?? feeData.gasPrice ?? await provider.getGasPrice()
-            } else if (eip1559Rejected) {
-              txOverrides.gasPrice = legacyGasPrice ?? feeData.gasPrice ?? await provider.getGasPrice()
-              txOverrides.type = 0
-            }
-
+            console.log('Retrying with explicit legacy transaction format...')
+            const retryGasPrice = await fetchLegacyGasPrice()
             tx = await contractWithSigner.createChain(
               txParams.name,
               txParams.chainType,
@@ -355,12 +320,36 @@ export default function CreateChainPage() {
               txParams.validators,
               txParams.rpcUrl,
               txParams.explorerUrl,
-              txOverrides
+              {
+                gasLimit: gasEstimate,
+                gasPrice: retryGasPrice
+                // Don't specify type - let ethers infer it from gasPrice
+              }
             )
-            console.log('Transaction sent via fallback method:', tx.hash)
-          } catch (fallbackError: any) {
-            console.error('Fallback method also failed:', fallbackError)
-            // Continue with original error handling
+            console.log('Retry successful, transaction sent:', tx.hash)
+          } catch (retryError: any) {
+            console.error('Retry also failed:', retryError)
+            
+            // Final attempt - use the most basic transaction format
+            try {
+              console.log('Final attempt with minimal transaction params...')
+              const finalGasPrice = await fetchLegacyGasPrice()
+              tx = await contractWithSigner.createChain(
+                txParams.name,
+                txParams.chainType,
+                txParams.rollupType,
+                txParams.gasToken,
+                txParams.validators,
+                txParams.rpcUrl,
+                txParams.explorerUrl,
+                {
+                  gasPrice: finalGasPrice
+                }
+              )
+              console.log('Final attempt successful:', tx.hash)
+            } catch (finalError: any) {
+              console.error('All attempts failed:', finalError)
+            }
           }
         }
         
@@ -460,9 +449,11 @@ export default function CreateChainPage() {
           }
         )
 
+        // Use the chain ID from backend response
+        const backendChainId = response.data.chainId || response.data.chain?.id
         chainData = {
           ...response.data.chain,
-          id: response.data.chainId,
+          id: backendChainId, // Use backend's UUID
           owner: address,
           createdAt: new Date().toISOString(),
           blockchainTxHash: txHashValue,
@@ -552,13 +543,24 @@ export default function CreateChainPage() {
       // Save to localStorage for frontend display
       if (chainData) {
         const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
-        existingChains.push(chainData)
-        localStorage.setItem('userChains', JSON.stringify(existingChains))
+        // Remove any duplicate chains with the same ID
+        const filteredChains = existingChains.filter((c: any) => c.id !== chainData.id)
+        filteredChains.push(chainData)
+        localStorage.setItem('userChains', JSON.stringify(filteredChains))
+        
+        // Navigate to the chain detail page using the correct ID
+        setTimeout(() => {
+          if (chainData.id) {
+            router.push(`/dashboard/chains/${encodeURIComponent(chainData.id)}`)
+          } else {
+            router.push('/dashboard')
+          }
+        }, 1500)
+      } else {
+        setTimeout(() => {
+          router.push('/dashboard')
+        }, 2000)
       }
-
-      setTimeout(() => {
-        router.push('/dashboard')
-      }, 2000)
     } catch (error: any) {
       console.error('Error creating chain:', error)
       
@@ -756,6 +758,32 @@ export default function CreateChainPage() {
 
             <div className="relative z-10">
               <div className="mb-10 flex flex-col gap-6">
+                {/* Templates Banner */}
+                <Link href="/dashboard/templates">
+                  <motion.div
+                    whileHover={{ scale: 1.01, y: -2 }}
+                    className="relative overflow-hidden rounded-2xl p-4 bg-gradient-to-r from-primary-500/20 via-accent-pink/10 to-accent-cyan/20 border border-primary-500/30 cursor-pointer"
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/20 to-transparent rounded-bl-full" />
+                    <div className="relative z-10 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Sparkles className="w-6 h-6 text-primary-400" />
+                        <div>
+                          <h4 className="font-bold text-sm mb-1">Deploy from Templates</h4>
+                          <p className="text-xs text-gray-400">Use pre-configured templates for Gaming, DeFi, NFT, and Enterprise chains</p>
+                        </div>
+                      </div>
+                      <motion.button
+                        whileHover={{ x: 4 }}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-primary-500 to-accent-pink font-semibold text-sm shadow-glow-purple flex items-center gap-2"
+                      >
+                        Browse Templates
+                        <ExternalLink className="w-4 h-4" />
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                </Link>
+
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                   <div className="flex items-center gap-4">
                     <motion.div

@@ -3,27 +3,37 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
-
-// In-memory storage (replace with database in production)
-const users = new Map();
+const db = require('../services/database');
+const { body, validationResult } = require('express-validator');
 
 // Generate JWT token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
-// Signup
-router.post('/signup', async (req, res) => {
-  try {
-    const { name, email, company, password } = req.body;
+// Generate refresh token
+const generateRefreshToken = (userId) => {
+  return jwt.sign({ userId, type: 'refresh' }, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, { expiresIn: '30d' });
+};
 
-    // Validation
-    if (!name || !email || !company || !password) {
-      return res.status(400).json({ message: 'All fields are required' });
+// Signup with validation
+router.post('/signup', [
+  body('email').isEmail().normalizeEmail(),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
+  body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
+  body('company').optional().trim()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
     }
 
+    const { name, email, company, password } = req.body;
+
     // Check if user exists
-    const existingUser = Array.from(users.values()).find(u => u.email === email);
+    const existingUser = await db.getUserByEmail(email);
     if (existingUser) {
       return res.status(400).json({ message: 'Email already registered' });
     }
@@ -31,75 +41,138 @@ router.post('/signup', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
+    // Create user in database
     const userId = uuidv4();
-    const user = {
+    const userData = {
       id: userId,
-      name,
       email,
-      company,
-      password: hashedPassword,
-      createdAt: new Date().toISOString()
+      password_hash: hashedPassword,
+      username: email.split('@')[0] + '_' + Date.now(),
+      first_name: name.split(' ')[0] || name,
+      last_name: name.split(' ').slice(1).join(' ') || '',
+      company: company || null,
+      role: 'user',
+      is_active: true,
+      email_verified: false,
+      subscription_tier: 'free',
+      created_at: new Date().toISOString()
     };
 
-    users.set(userId, user);
+    const user = await db.createUser(userData);
 
-    // Generate token
+    // Generate tokens
     const token = generateToken(userId);
+    const refreshToken = generateRefreshToken(userId);
 
     res.status(201).json({
       message: 'User created successfully',
       token,
+      refreshToken,
       user: {
         id: user.id,
-        name: user.name,
         email: user.email,
+        name: `${user.first_name} ${user.last_name}`.trim(),
         company: user.company
       }
     });
   } catch (error) {
     console.error('Signup error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: process.env.NODE_ENV === 'development' ? error.message : undefined });
   }
 });
 
-// Login
-router.post('/login', async (req, res) => {
+// Login with validation
+router.post('/login', [
+  body('email').isEmail().normalizeEmail(),
+  body('password').notEmpty().withMessage('Password is required')
+], async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    // Validation
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
     }
 
-    // Find user
-    const user = Array.from(users.values()).find(u => u.email === email);
+    const { email, password } = req.body;
+
+    // Find user in database
+    const user = await db.getUserByEmail(email);
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Check if user is active
+    if (!user.is_active) {
+      return res.status(403).json({ message: 'Account is disabled' });
+    }
+
     // Check password
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    const isValidPassword = await bcrypt.compare(password, user.password_hash || user.password);
     if (!isValidPassword) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Generate token
+    // Update last login
+    await db.updateUser(user.id, { last_login: new Date().toISOString() });
+
+    // Generate tokens
     const token = generateToken(user.id);
+    const refreshToken = generateRefreshToken(user.id);
 
     res.json({
       message: 'Login successful',
       token,
+      refreshToken,
       user: {
         id: user.id,
-        name: user.name,
         email: user.email,
+        name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.name || user.username,
         company: user.company
       }
     });
   } catch (error) {
     console.error('Login error:', error);
+    res.status(500).json({ message: 'Server error', error: process.env.NODE_ENV === 'development' ? error.message : undefined });
+  }
+});
+
+// Refresh token endpoint
+router.post('/refresh', [
+  body('refreshToken').notEmpty().withMessage('Refresh token is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+
+    const { refreshToken } = req.body;
+
+    try {
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+      
+      if (decoded.type !== 'refresh') {
+        return res.status(401).json({ message: 'Invalid token type' });
+      }
+
+      // Verify user still exists and is active
+      const user = await db.getUserById(decoded.userId);
+      if (!user || !user.is_active) {
+        return res.status(401).json({ message: 'User not found or inactive' });
+      }
+
+      // Generate new tokens
+      const newToken = generateToken(decoded.userId);
+      const newRefreshToken = generateRefreshToken(decoded.userId);
+
+      res.json({
+        token: newToken,
+        refreshToken: newRefreshToken
+      });
+    } catch (error) {
+      return res.status(401).json({ message: 'Invalid or expired refresh token' });
+    }
+  } catch (error) {
+    console.error('Refresh token error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -113,7 +186,7 @@ router.get('/me', async (req, res) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = users.get(decoded.userId);
+    const user = await db.getUserById(decoded.userId);
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -122,9 +195,11 @@ router.get('/me', async (req, res) => {
     res.json({
       user: {
         id: user.id,
-        name: user.name,
         email: user.email,
-        company: user.company
+        name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.name || user.username,
+        company: user.company,
+        role: user.role,
+        subscription_tier: user.subscription_tier
       }
     });
   } catch (error) {

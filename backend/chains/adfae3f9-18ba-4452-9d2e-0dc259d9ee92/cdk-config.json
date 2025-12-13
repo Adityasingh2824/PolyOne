@@ -1,0 +1,25 @@
+{
+  "chainId": 0,
+  "chainName": "XYZ",
+  "rollupType": "zk-rollup",
+  "gasToken": "ZYX",
+  "validators": 31,
+  "chainType": "public",
+  "validatorAccess": "public",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x..."
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "rollup",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00"
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": "adfae3f9-18ba-4452-9d2e-0dc259d9ee92"
+  }
+}
