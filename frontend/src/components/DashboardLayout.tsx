@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { usePathname } from 'next/navigation'
+import React, { useState, useEffect } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   FileText,
+  FileCode,
   HelpCircle,
   Home,
   Wallet,
@@ -33,41 +34,36 @@ import { useWallet } from '@/hooks/useWallet'
 import NotificationDropdown from './NotificationDropdown'
 import { apiClient } from '@/lib/api'
 import toast from 'react-hot-toast'
+import { useWhiteLabel } from './WhiteLabelProvider'
 
 interface DashboardLayoutProps {
   children: React.ReactNode
 }
 
-// Animated Background Component for Dashboard
+// Helper function to format wallet address
+function formatAddress(addr: string): string {
+  if (!addr) return ''
+  const start = addr.slice(0, 6)
+  const end = addr.slice(-4)
+  return start + '...' + end
+}
+
+// Animated Background Component for Dashboard - Enhanced
 const DashboardBackground = () => (
   <div className="fixed inset-0 pointer-events-none overflow-hidden">
-    {/* Base gradient */}
-    <div className="absolute inset-0 bg-gradient-dark" />
+    {/* Mesh gradient background */}
+    <div className="absolute inset-0 bg-mesh-gradient opacity-50" />
     
-    {/* Animated orbs */}
+    {/* Animated orbs with subtle movement */}
     <motion.div
-      className="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] rounded-full opacity-30"
+      className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] lg:w-[600px] lg:h-[600px] rounded-full opacity-25 blur-3xl"
       style={{
-        background: 'radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, transparent 70%)',
+        background: 'radial-gradient(circle, rgba(168, 85, 247, 0.25) 0%, transparent 60%)',
       }}
       animate={{
         scale: [1, 1.1, 1],
         x: [0, 30, 0],
-      }}
-      transition={{
-        duration: 20,
-        repeat: Infinity,
-        ease: 'easeInOut',
-      }}
-    />
-    <motion.div
-      className="absolute bottom-[-10%] right-[-5%] w-[700px] h-[700px] rounded-full opacity-25"
-      style={{
-        background: 'radial-gradient(circle, rgba(236, 72, 153, 0.15) 0%, transparent 70%)',
-      }}
-      animate={{
-        scale: [1.1, 1, 1.1],
-        x: [0, -30, 0],
+        y: [0, 20, 0],
       }}
       transition={{
         duration: 25,
@@ -75,16 +71,53 @@ const DashboardBackground = () => (
         ease: 'easeInOut',
       }}
     />
+    <motion.div
+      className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] lg:w-[700px] lg:h-[700px] rounded-full opacity-20 blur-3xl"
+      style={{
+        background: 'radial-gradient(circle, rgba(236, 72, 153, 0.2) 0%, transparent 60%)',
+      }}
+      animate={{
+        scale: [1.1, 1, 1.1],
+        x: [0, -30, 0],
+        y: [0, -20, 0],
+      }}
+      transition={{
+        duration: 30,
+        repeat: Infinity,
+        ease: 'easeInOut',
+      }}
+    />
+    <motion.div
+      className="absolute top-[40%] right-[20%] w-[400px] h-[400px] rounded-full opacity-15 blur-3xl hidden lg:block"
+      style={{
+        background: 'radial-gradient(circle, rgba(6, 182, 212, 0.2) 0%, transparent 60%)',
+      }}
+      animate={{
+        scale: [1, 1.15, 1],
+        x: [0, -20, 20, 0],
+      }}
+      transition={{
+        duration: 20,
+        repeat: Infinity,
+        ease: 'easeInOut',
+      }}
+    />
     
-    {/* Grid pattern */}
-    <div className="absolute inset-0 bg-grid opacity-20" />
+    {/* Grid pattern with gradient mask */}
+    <div 
+      className="absolute inset-0 bg-grid opacity-30"
+      style={{
+        maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 80%)',
+        WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 80%)',
+      }}
+    />
     
     {/* Noise texture */}
     <div className="absolute inset-0 bg-noise" />
   </div>
 )
 
-// Sidebar Nav Item Component
+// Sidebar Nav Item Component - Enhanced
 const NavItem = ({ 
   item, 
   isActive, 
@@ -99,47 +132,66 @@ const NavItem = ({
   return (
     <Link href={item.href} onClick={onClick}>
       <motion.div
-        whileHover={{ x: 6 }}
+        whileHover={{ x: 4 }}
         whileTap={{ scale: 0.98 }}
         className={`
-          relative flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer group
+          relative flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 cursor-pointer group
           ${isActive 
-            ? 'bg-gradient-to-r from-primary-500/20 to-accent-pink/10 text-white' 
+            ? 'bg-gradient-to-r from-primary-500/20 via-accent-pink/10 to-transparent text-white' 
             : 'text-gray-400 hover:text-white hover:bg-white/5'
           }
         `}
       >
-        {/* Active indicator */}
+        {/* Active indicator - enhanced */}
         {isActive && (
           <motion.div
             layoutId="activeNav"
-            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full bg-gradient-to-b from-primary-400 to-accent-pink"
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 rounded-r-full bg-gradient-to-b from-primary-400 via-accent-pink to-accent-cyan shadow-glow-purple"
+            transition={{ type: 'spring', stiffness: 350, damping: 30 }}
           />
         )}
         
-        <div className={`
-          w-10 h-10 rounded-xl flex items-center justify-center transition-all
-          ${isActive 
-            ? 'bg-gradient-to-br from-primary-500 to-accent-pink shadow-glow-purple' 
-            : 'bg-white/5 group-hover:bg-white/10'
-          }
-        `}>
-          <Icon className="w-5 h-5" />
-        </div>
+        {/* Icon container with enhanced styling */}
+        <motion.div 
+          className={`
+            w-11 h-11 rounded-xl flex items-center justify-center transition-all relative overflow-hidden
+            ${isActive 
+              ? 'bg-gradient-to-br from-primary-500 to-accent-pink shadow-lg' 
+              : 'bg-white/5 group-hover:bg-white/10 border border-white/5 group-hover:border-white/10'
+            }
+          `}
+          whileHover={{ scale: 1.05 }}
+        >
+          <Icon className="w-5 h-5 relative z-10" />
+          {/* Shine effect on active */}
+          {isActive && (
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent"
+              initial={{ x: '-100%' }}
+              animate={{ x: '100%' }}
+              transition={{ duration: 1.5, repeat: Infinity, repeatDelay: 2 }}
+            />
+          )}
+        </motion.div>
         
-        <span className="font-medium">{item.name}</span>
+        <span className="font-medium flex-1">{item.name}</span>
         
         {item.badge && (
-          <span className="ml-auto px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-500/20 text-primary-300 border border-primary-500/30">
+          <motion.span 
+            className="px-2.5 py-1 rounded-full text-xs font-semibold bg-primary-500/20 text-primary-300 border border-primary-500/30"
+            whileHover={{ scale: 1.05 }}
+          >
             {item.badge}
-          </span>
+          </motion.span>
         )}
         
-        <ChevronRight className={`
-          w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity
-          ${isActive ? 'text-primary-400' : 'text-gray-500'}
-        `} />
+        <motion.div
+          className={`opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'text-primary-400' : 'text-gray-500'}`}
+          animate={isActive ? { x: [0, 3, 0] } : {}}
+          transition={{ duration: 1.5, repeat: Infinity }}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </motion.div>
       </motion.div>
     </Link>
   )
@@ -147,31 +199,55 @@ const NavItem = ({
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [authChecked, setAuthChecked] = useState(false)
   const { address, isConnected, disconnect, balance, chainId, tokenSymbol } = useWallet()
+  const { settings } = useWhiteLabel()
 
-  // Fetch unread notification count function
-  const fetchUnreadCount = async () => {
-    try {
-      const response = await apiClient.notifications.getUnreadCount()
-      setUnreadCount(response.data?.count || 0)
-    } catch (error) {
-      // Silently fail - notifications are optional
-      console.debug('Error fetching unread count:', error)
+  // Auth guard: wallet-only OR JWT. If wallet connected, no email/auth required.
+  // Give wallet a short moment to rehydrate (e.g. Rainbow/Wagmi restore) before redirecting.
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (isConnected || token) {
+      setAuthChecked(true)
+      return
     }
-  }
+    const t = setTimeout(() => {
+      const tokenNow = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+      const stillDisconnected = !isConnected
+      if (stillDisconnected && !tokenNow) {
+        router.replace('/login')
+      } else {
+        setAuthChecked(true)
+      }
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [isConnected, router])
 
   // Fetch unread notification count
   useEffect(() => {
-    if (address) {
-      fetchUnreadCount()
-      // Poll for updates every 30 seconds
-      const interval = setInterval(fetchUnreadCount, 30000)
-      return () => clearInterval(interval)
+    if (!address) {
+      return
     }
+
+    const fetchUnreadCount = async () => {
+      try {
+        const response = await apiClient.notifications.getUnreadCount()
+        setUnreadCount(response.data?.count || 0)
+      } catch (error) {
+        // Silently fail - notifications are optional
+        console.debug('Error fetching unread count:', error)
+      }
+    }
+
+    fetchUnreadCount()
+    // Poll for updates every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 30000)
+    return () => clearInterval(interval)
   }, [address])
 
   const copyToClipboard = (text: string) => {
@@ -180,11 +256,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     toast.success('Copied to clipboard!')
   }
 
-  const handleDisconnect = () => {
-    if (isConnected) {
-      disconnect().catch((error) => {
+  const handleDisconnect = async () => {
+    if (isConnected && disconnect) {
+      try {
+        await disconnect()
+      } catch (error) {
         console.warn('Failed to disconnect wallet:', error)
-      })
+      }
     }
   }
 
@@ -192,23 +270,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { name: 'Dashboard', href: '/dashboard', icon: Home },
     { name: 'My Chains', href: '/dashboard/chains', icon: Layers, badge: 'New' },
     { name: 'Templates', href: '/dashboard/templates', icon: Sparkles, badge: 'New' },
+    { name: 'Contracts', href: '/dashboard/contracts', icon: FileCode, badge: 'New' },
     { name: 'Launch Chain', href: '/dashboard/create', icon: Plus },
     { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
     { name: 'Billing', href: '/dashboard/billing', icon: CreditCard },
-  ]
+  ];
 
   const secondaryNavigation = [
     { name: 'Documentation', href: '/docs', icon: FileText },
     { name: 'Support', href: '/support', icon: HelpCircle },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-  ]
+  ];
 
-  const formatAddress = (addr: string): string => {
-    if (!addr) return ''
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`
+  // Show nothing while checking auth (prevents flash)
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-dark-600 text-white flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
   }
 
-  // Render component
   return (
     <div className="min-h-screen bg-dark-600 text-white relative">
       <DashboardBackground />
@@ -227,24 +309,32 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </AnimatePresence>
 
       {/* Sidebar */}
-      <aside className={`
-        fixed top-0 left-0 z-50 h-full w-72 
-        bg-dark-400/80 backdrop-blur-2xl border-r border-white/5
-        transform transition-transform duration-300 ease-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
+      <aside
+        className={`fixed top-0 left-0 z-50 h-full w-72 bg-dark-400/80 backdrop-blur-2xl border-r border-white/5 transform transition-transform duration-300 ease-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+      >
         <div className="flex flex-col h-full overflow-hidden">
           {/* Logo Section */}
           <div className="flex-shrink-0 p-6 border-b border-white/5">
             <Link href="/" className="flex items-center gap-3 group">
-              <motion.div
-                whileHover={{ scale: 1.05, rotate: 5 }}
-                className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-500 via-accent-pink to-accent-cyan flex items-center justify-center shadow-glow-purple"
-              >
-                <Rocket className="w-6 h-6 text-white" />
-              </motion.div>
+              {settings?.branding.logo ? (
+                <motion.img
+                  whileHover={{ scale: 1.05 }}
+                  src={settings.branding.logo}
+                  alt={settings.branding.companyName || 'Logo'}
+                  className="w-11 h-11 rounded-xl object-contain"
+                />
+              ) : (
+                <motion.div
+                  whileHover={{ scale: 1.05, rotate: 5 }}
+                  className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary-500 via-accent-pink to-accent-cyan flex items-center justify-center shadow-glow-purple"
+                >
+                  <Rocket className="w-6 h-6 text-white" />
+                </motion.div>
+              )}
               <div>
-                <span className="font-bold text-lg block group-hover:text-gradient transition-all">PolyOne</span>
+                <span className="font-bold text-lg block group-hover:text-gradient transition-all">
+                  {settings?.branding.companyName || 'PolyOne'}
+                </span>
                 <span className="text-xs text-gray-500">Dashboard</span>
               </div>
             </Link>
@@ -442,7 +532,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 </motion.button>
               </Link>
             )}
-          </div>
+            </div>
           
             {/* Upgrade CTA */}
             <div className="px-4 pb-4 pt-0">
@@ -486,6 +576,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 </Link>
               </div>
             </motion.div>
+          </div>
           </div>
         </div>
       </aside>
@@ -587,7 +678,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <footer className="border-t border-white/5 py-6 px-6">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
             <p className="text-sm text-gray-500">
-              © 2025 PolyOne. Built on Polygon CDK.
+              © {new Date().getFullYear()} {settings?.branding.companyName || 'PolyOne'}. Built on Polygon CDK.
             </p>
             <div className="flex items-center gap-6">
               <Link href="/docs" className="text-sm text-gray-500 hover:text-white transition-colors">

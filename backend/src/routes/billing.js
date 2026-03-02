@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../services/database');
 const contracts = require('../services/contracts');
+const stripeService = require('../services/stripe');
 
 // Middleware to verify JWT (optional for development)
 const authenticate = (req, res, next) => {
@@ -253,7 +254,216 @@ router.get('/usage', authenticate, async (req, res) => {
   }
 });
 
+// ========== SERVICE CREDITS (partner appchains - offset operational costs) ==========
+
+// Get current user's service credits balance
+router.get('/service-credits', authenticate, async (req, res) => {
+  try {
+    const organizationId = req.query.organization_id || null;
+    const balance = await db.getServiceCreditsBalance(req.userId, organizationId);
+    const record = await db.getServiceCreditsRecord(req.userId, organizationId);
+    res.json({
+      balance,
+      isPartnerAppchain: record?.is_partner_appchain ?? record?.isPartnerAppchain ?? false,
+      description: 'Service credits help partner appchains offset operational costs and onboard with lower friction'
+    });
+  } catch (error) {
+    console.error('Error fetching service credits:', error);
+    res.status(500).json({ message: 'Failed to fetch service credits', error: error.message });
+  }
+});
+
+// Apply service credits to an invoice (reduce amount due)
+router.post('/invoices/:invoiceId/apply-credits', authenticate, [
+  require('express-validator').body('amount').isFloat({ min: 0.000001 }).withMessage('Amount must be greater than 0')
+], async (req, res) => {
+  try {
+    const errors = require('express-validator').validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+    const { invoiceId } = req.params;
+    const amount = parseFloat(req.body.amount);
+    const result = await db.applyServiceCreditsToInvoice(invoiceId, amount, req.userId);
+    res.json({
+      message: `Applied ${result.applied} service credits to invoice`,
+      applied: result.applied,
+      newAmountDue: result.newAmountDue
+    });
+  } catch (error) {
+    console.error('Error applying service credits:', error);
+    res.status(400).json({ message: error.message || 'Failed to apply service credits' });
+  }
+});
+
+// ========== STRIPE INTEGRATION ==========
+
+// Create Stripe Checkout Session
+router.post('/checkout', authenticate, async (req, res) => {
+  try {
+    if (!stripeService.isConfigured()) {
+      return res.status(501).json({ message: 'Stripe is not configured. Set STRIPE_SECRET_KEY in environment.' });
+    }
+
+    const { planId, successUrl, cancelUrl } = req.body;
+    if (!planId) {
+      return res.status(400).json({ message: 'Plan ID is required' });
+    }
+
+    // Get plan details
+    const plans = await db.getSubscriptionPlans();
+    const plan = plans?.find(p => p.id === planId || p.slug === planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    // Get user info
+    const user = await db.getUserById(req.userId);
+    const email = user?.email || req.body.email;
+    const name = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : '';
+
+    if (!email) {
+      return res.status(400).json({ message: 'User email is required for checkout' });
+    }
+
+    const session = await stripeService.createCheckoutSession({
+      userId: req.userId,
+      email,
+      name,
+      planId: plan.id || plan.slug,
+      priceAmount: plan.price_monthly || plan.price || 0,
+      planName: plan.name,
+      successUrl,
+      cancelUrl,
+    });
+
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ message: 'Failed to create checkout session', error: error.message });
+  }
+});
+
+// Stripe Webhook handler (raw body required)
+router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    if (!stripeService.isConfigured()) {
+      return res.status(501).json({ message: 'Stripe not configured' });
+    }
+
+    const sig = req.headers['stripe-signature'];
+    let event;
+
+    try {
+      event = stripeService.constructWebhookEvent(req.body, sig);
+    } catch (err) {
+      console.error('Webhook signature verification failed:', err.message);
+      return res.status(400).json({ message: 'Webhook signature verification failed' });
+    }
+
+    // Handle the event
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const userId = session.metadata?.polyone_user_id;
+        const planId = session.metadata?.polyone_plan_id;
+        if (userId && planId) {
+          const subscription = {
+            id: uuidv4(),
+            userId,
+            planId,
+            status: 'active',
+            stripeSubscriptionId: session.subscription,
+            stripeCustomerId: session.customer,
+            startTime: Math.floor(Date.now() / 1000),
+            endTime: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60),
+            autoRenew: true,
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          };
+          await db.createSubscription(subscription);
+          console.log(`Subscription created for user ${userId} via Stripe checkout`);
+        }
+        break;
+      }
+
+      case 'invoice.paid': {
+        const invoice = event.data.object;
+        console.log(`Stripe invoice ${invoice.id} paid`);
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object;
+        console.log(`Stripe subscription ${sub.id} cancelled`);
+        // Find and cancel local subscription by stripeSubscriptionId
+        break;
+      }
+
+      default:
+        console.log(`Unhandled Stripe event: ${event.type}`);
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Stripe webhook error:', error);
+    res.status(500).json({ message: 'Webhook handler failed' });
+  }
+});
+
+// Admin: Add service credits to a user (e.g. partner onboarding)
+router.post('/service-credits/add', authenticate, [
+  require('express-validator').body('user_id').notEmpty().withMessage('user_id is required'),
+  require('express-validator').body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be at least 0.01'),
+  require('express-validator').body('reason').optional(),
+  require('express-validator').body('is_partner_appchain').optional().isBoolean(),
+  require('express-validator').body('organization_id').optional()
+], async (req, res) => {
+  try {
+    const errors = require('express-validator').validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+    const { user_id, amount, reason, is_partner_appchain, organization_id } = req.body;
+    // In production: check req.userId has admin role
+    const record = await db.addServiceCredits(user_id, amount, reason || 'partner_onboarding', organization_id || null, !!is_partner_appchain);
+    res.json({
+      message: `Added ${amount} service credits`,
+      balance: record?.balance ?? record,
+      isPartnerAppchain: !!is_partner_appchain
+    });
+  } catch (error) {
+    console.error('Error adding service credits:', error);
+    res.status(500).json({ message: 'Failed to add service credits', error: error.message });
+  }
+});
+
 module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

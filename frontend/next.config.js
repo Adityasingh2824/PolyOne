@@ -15,6 +15,26 @@ const nextConfig = {
     NEXT_PUBLIC_CHAIN_REGISTRY_ADDRESS: process.env.NEXT_PUBLIC_CHAIN_REGISTRY_ADDRESS || '',
     NEXT_PUBLIC_DEFAULT_NETWORK: process.env.NEXT_PUBLIC_DEFAULT_NETWORK || 'polygonAmoy',
   },
+  // Fix module resolution errors for optional dependencies
+  webpack: (config, { isServer }) => {
+    // Ignore optional dependencies that aren't needed in browser
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        '@react-native-async-storage/async-storage': false,
+        'pino-pretty': false,
+      };
+    }
+    
+    // Ignore these modules during bundling
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@react-native-async-storage/async-storage': false,
+      'pino-pretty': false,
+    };
+    
+    return config;
+  },
 }
 
 module.exports = nextConfig

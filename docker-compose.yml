@@ -6,9 +6,9 @@ services:
     image: postgres:15-alpine
     container_name: polyone-db
     environment:
-      POSTGRES_DB: polyone
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: ${DB_NAME:-polyone}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123}
     ports:
       - "5432:5432"
     volumes:
@@ -27,15 +27,17 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: polyone-backend
+    env_file:
+      - ./backend/.env
     environment:
-      NODE_ENV: production
-      PORT: 5000
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-5000}
       DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: polyone
-      DB_USER: postgres
-      DB_PASSWORD: postgres123
-      JWT_SECRET: your_super_secret_jwt_key_change_this
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-polyone}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres123}
+      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "5000:5000"
     depends_on:
@@ -54,8 +56,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: polyone-frontend
+    env_file:
+      - ./frontend/.env.local
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:5000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
     ports:
       - "3000:3000"
     depends_on:
@@ -87,8 +91,8 @@ services:
     ports:
       - "3001:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards

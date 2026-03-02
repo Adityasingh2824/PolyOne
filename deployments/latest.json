@@ -1,0 +1,21 @@
+{
+  "network": "polygonAmoy",
+  "chainId": 80002,
+  "deployer": "0x20EF95677aE986b59B35bB5f508916C420701d75",
+  "contracts": {
+    "PolyOneChainFactory": "0x0060111B688d457d9Ed17Fe6cC0D2B5756CEa51C",
+    "ValidatorRegistry": "0x2a296198a4DB4BA98207B1C0700A4075E4209c98",
+    "PolyOneBridge": "0xCf90e85DA351c1c35d465d92d761b2746fbD9d86",
+    "PolyOneBilling": "0x75641F46F65a4D65053963311ab3D99b1E7493E3",
+    "ChainFactory": "0xBd0dF92ecb345D371ba65f54b8c833270a8d0aF6",
+    "ChainRegistry": "0x393FAb09e7817054bcDFB4F160bFc2cf27c90e65"
+  },
+  "roles": {
+    "chainFactoryAdmin": "0x20EF95677aE986b59B35bB5f508916C420701d75",
+    "validatorRegistryAdmin": "0x20EF95677aE986b59B35bB5f508916C420701d75",
+    "billingAdmin": "0x20EF95677aE986b59B35bB5f508916C420701d75",
+    "bridgeFeeCollector": "0x20EF95677aE986b59B35bB5f508916C420701d75"
+  },
+  "timestamp": "2025-12-14T15:47:49.857Z",
+  "blockNumber": 30516477
+}

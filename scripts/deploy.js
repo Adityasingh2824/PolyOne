@@ -75,30 +75,45 @@ async function main() {
   // Deploy PolyOneChainFactory (new enhanced version)
   console.log("\n🏗️  Deploying PolyOneChainFactory...")
   const PolyOneChainFactory = await hre.ethers.getContractFactory("PolyOneChainFactory")
-  const polyOneChainFactory = await PolyOneChainFactory.deploy()
+  // Deploy with deployer as fee collector
+  const polyOneChainFactory = await PolyOneChainFactory.deploy(deployer.address)
   await polyOneChainFactory.waitForDeployment()
   const polyOneChainFactoryAddress = await polyOneChainFactory.getAddress()
   console.log("✅ PolyOneChainFactory deployed to:", polyOneChainFactoryAddress)
-
-  // Grant deployer admin role
+  console.log("   Fee Collector:", deployer.address)
+  
+  // Admin role is already granted in constructor, but verify
   const ADMIN_ROLE = await polyOneChainFactory.ADMIN_ROLE()
-  const grantAdminTx = await polyOneChainFactory.grantRole(ADMIN_ROLE, deployer.address)
-  await grantAdminTx.wait()
-  console.log("✅ Admin role granted to deployer")
+  const hasAdminRole = await polyOneChainFactory.hasRole(ADMIN_ROLE, deployer.address)
+  if (hasAdminRole) {
+    console.log("✅ Admin role already granted to deployer (via constructor)")
+  } else {
+    const grantAdminTx = await polyOneChainFactory.grantRole(ADMIN_ROLE, deployer.address)
+    await grantAdminTx.wait()
+    console.log("✅ Admin role granted to deployer")
+  }
 
   // Deploy ValidatorRegistry
   console.log("\n🏗️  Deploying ValidatorRegistry...")
   const ValidatorRegistry = await hre.ethers.getContractFactory("ValidatorRegistry")
-  const validatorRegistry = await ValidatorRegistry.deploy()
+  // Use zero address for staking token (can be updated later)
+  const stakingTokenAddress = "0x0000000000000000000000000000000000000000"
+  const validatorRegistry = await ValidatorRegistry.deploy(stakingTokenAddress)
   await validatorRegistry.waitForDeployment()
   const validatorRegistryAddress = await validatorRegistry.getAddress()
   console.log("✅ ValidatorRegistry deployed to:", validatorRegistryAddress)
-
-  // Grant deployer admin role for ValidatorRegistry
+  console.log("   Staking Token:", stakingTokenAddress, "(zero address - can be updated later)")
+  
+  // Admin role is already granted in constructor, but verify
   const VALIDATOR_ADMIN_ROLE = await validatorRegistry.ADMIN_ROLE()
-  const grantValidatorAdminTx = await validatorRegistry.grantRole(VALIDATOR_ADMIN_ROLE, deployer.address)
-  await grantValidatorAdminTx.wait()
-  console.log("✅ ValidatorRegistry admin role granted to deployer")
+  const hasValidatorAdminRole = await validatorRegistry.hasRole(VALIDATOR_ADMIN_ROLE, deployer.address)
+  if (hasValidatorAdminRole) {
+    console.log("✅ ValidatorRegistry admin role already granted to deployer (via constructor)")
+  } else {
+    const grantValidatorAdminTx = await validatorRegistry.grantRole(VALIDATOR_ADMIN_ROLE, deployer.address)
+    await grantValidatorAdminTx.wait()
+    console.log("✅ ValidatorRegistry admin role granted to deployer")
+  }
 
   // Deploy PolyOneBridge
   console.log("\n🏗️  Deploying PolyOneBridge...")
@@ -113,16 +128,23 @@ async function main() {
   // Deploy PolyOneBilling
   console.log("\n🏗️  Deploying PolyOneBilling...")
   const PolyOneBilling = await hre.ethers.getContractFactory("PolyOneBilling")
-  const polyOneBilling = await PolyOneBilling.deploy()
+  // Deploy with deployer as treasury
+  const polyOneBilling = await PolyOneBilling.deploy(deployer.address)
   await polyOneBilling.waitForDeployment()
   const polyOneBillingAddress = await polyOneBilling.getAddress()
   console.log("✅ PolyOneBilling deployed to:", polyOneBillingAddress)
-
-  // Grant deployer billing admin role
+  console.log("   Treasury:", deployer.address)
+  
+  // Admin role is already granted in constructor, but verify
   const BILLING_ADMIN_ROLE = await polyOneBilling.ADMIN_ROLE()
-  const grantBillingAdminTx = await polyOneBilling.grantRole(BILLING_ADMIN_ROLE, deployer.address)
-  await grantBillingAdminTx.wait()
-  console.log("✅ Billing admin role granted to deployer")
+  const hasBillingAdminRole = await polyOneBilling.hasRole(BILLING_ADMIN_ROLE, deployer.address)
+  if (hasBillingAdminRole) {
+    console.log("✅ Billing admin role already granted to deployer (via constructor)")
+  } else {
+    const grantBillingAdminTx = await polyOneBilling.grantRole(BILLING_ADMIN_ROLE, deployer.address)
+    await grantBillingAdminTx.wait()
+    console.log("✅ Billing admin role granted to deployer")
+  }
 
   // Deploy legacy ChainFactory for backward compatibility (if needed)
   console.log("\n🏗️  Deploying legacy ChainFactory (for backward compatibility)...")
@@ -182,8 +204,19 @@ async function main() {
     `${hre.network.name}-${Date.now()}.json`
   )
   
+  // Save timestamped deployment
   fs.writeFileSync(deploymentFile, JSON.stringify(deploymentInfo, null, 2))
   console.log("\n💾 Deployment info saved to:", deploymentFile)
+  
+  // Also save as latest.json for easy access
+  const latestFile = path.join(deploymentDir, `${hre.network.name}-latest.json`)
+  fs.writeFileSync(latestFile, JSON.stringify(deploymentInfo, null, 2))
+  console.log("💾 Latest deployment saved to:", latestFile)
+  
+  // Save to root as latest.json for scripts
+  const rootLatestFile = path.join(__dirname, "..", "deployments", "latest.json")
+  fs.writeFileSync(rootLatestFile, JSON.stringify(deploymentInfo, null, 2))
+  console.log("💾 Root latest deployment saved to:", rootLatestFile)
 
   // Verification instructions
   if (hre.network.name !== "hardhat" && hre.network.name !== "localhost") {

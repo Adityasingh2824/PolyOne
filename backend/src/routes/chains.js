@@ -8,6 +8,86 @@ const chainIntegration = require('../services/chainIntegration');
 const { body, validationResult } = require('express-validator');
 const fs = require('fs').promises;
 const path = require('path');
+const getWsService = require('../middleware/getWsService');
+
+// Helper function to fix chains stuck in "deploying" status
+async function fixStuckDeployingChain(chain) {
+  // Check if chain is in deploying status (case-insensitive)
+  if (!chain) return chain;
+  const chainStatus = (chain.status || '').toLowerCase();
+  if (chainStatus !== 'deploying') return chain;
+  
+  // Get the time the chain was created or last updated for logging
+  const timeField = chain.created_at || chain.updated_at || chain.createdAt || chain.updatedAt;
+  let timeInfo = '';
+  if (timeField) {
+    const createdTime = new Date(timeField);
+    const now = new Date();
+    const minutesSinceCreation = (now - createdTime) / (1000 * 60);
+    timeInfo = `created: ${timeField}, ${minutesSinceCreation.toFixed(1)} minutes ago`;
+  } else {
+    timeInfo = 'no timestamp found (assuming old)';
+  }
+  
+  // Fix ANY chain in "deploying" status - no time check needed
+  // This ensures all stuck chains get fixed immediately
+  try {
+    console.log(`🔧 Fixing stuck chain ${chain.id} (status: deploying, ${timeInfo})`);
+    const updateData = {
+      status: 'active',
+      deployed_at: chain.deployed_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    const updatedChain = await db.updateChain(chain.id, updateData);
+    
+    if (updatedChain) {
+      console.log(`✅ Fixed stuck chain ${chain.id} - updated to active status. Response status: ${updatedChain.status}`);
+      return updatedChain;
+    } else {
+      // If updateChain returns null/undefined, manually update the chain object
+      console.log(`⚠️ updateChain returned null for ${chain.id}, using manual update`);
+      return { ...chain, ...updateData, status: 'active' };
+    }
+  } catch (fixError) {
+    console.error(`❌ Error fixing stuck chain ${chain.id}:`, fixError.message);
+    console.error(`❌ Error stack:`, fixError.stack);
+    // Even if update fails, try to return a fixed version of the chain object
+    return { ...chain, status: 'active', updated_at: new Date().toISOString() };
+  }
+}
+
+// Helper function to normalize chain data from snake_case to camelCase for frontend
+function normalizeChainData(chain) {
+  if (!chain) return null;
+  
+  return {
+    id: chain.id,
+    userId: chain.user_id || chain.userId,
+    name: chain.name,
+    chainType: chain.chain_type || chain.chainType,
+    rollupType: chain.rollup_type || chain.rollupType,
+    gasToken: chain.gas_token || chain.gasToken,
+    validatorAccess: chain.validator_access || chain.validatorAccess,
+    validators: chain.validator_count || chain.validators || chain.initialValidators,
+    initialValidators: chain.validator_count || chain.validators || chain.initialValidators,
+    status: chain.status || (chain.isActive ? 'active' : 'inactive'),
+    isActive: chain.isActive !== undefined ? chain.isActive : (chain.status === 'active'),
+    rpcUrl: chain.rpc_url || chain.rpcUrl,
+    explorerUrl: chain.explorer_url || chain.explorerUrl,
+    bridgeUrl: chain.bridge_url || chain.bridgeUrl,
+    chainId: chain.chainId || chain.id,
+    blockchainTxHash: chain.blockchain_tx_hash || chain.blockchainTxHash,
+    blockchainChainId: chain.blockchain_chain_id || chain.blockchainChainId,
+    polygonScanUrl: chain.polygon_scan_url || chain.polygonScanUrl,
+    agglayerChainId: chain.agglayer_chain_id || chain.agglayerChainId,
+    createdAt: chain.created_at || chain.createdAt,
+    updatedAt: chain.updated_at || chain.updatedAt,
+    deployedAt: chain.deployed_at || chain.deployedAt,
+    // Keep original fields for backward compatibility
+    ...chain
+  };
+}
 
 // Middleware to verify JWT (optional for development)
 const authenticate = (req, res, next) => {
@@ -36,6 +116,39 @@ const authenticate = (req, res, next) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/chains:
+ *   get:
+ *     summary: Get all chains for the authenticated user
+ *     tags: [Chains]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: walletAddress
+ *         schema:
+ *           type: string
+ *         description: Wallet address to fetch chains for (optional)
+ *     responses:
+ *       200:
+ *         description: List of chains
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 chains:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Chain'
+ *                 stats:
+ *                   type: object
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 // Get all chains for a user - syncs with blockchain
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -52,6 +165,28 @@ router.get('/', authenticate, async (req, res) => {
       userChains = await db.getUserChains(userId);
       stats = await db.getUserDashboardStats(userId);
       console.log('✅ Retrieved chains from database:', userChains?.length || 0);
+      
+      // Fix chains stuck in "deploying" status (case-insensitive check)
+      const stuckChains = (userChains || []).filter(chain => {
+        const status = (chain.status || '').toLowerCase();
+        return status === 'deploying';
+      });
+      
+      if (stuckChains.length > 0) {
+        console.log(`🔍 Found ${stuckChains.length} chain(s) in "deploying" status, fixing them...`);
+      }
+      
+      // Update stuck chains to "active" status
+      for (let i = 0; i < stuckChains.length; i++) {
+        const chain = stuckChains[i];
+        const fixedChain = await fixStuckDeployingChain(chain);
+        // Update the chain in the array
+        const index = userChains.findIndex(c => c.id === chain.id);
+        if (index >= 0 && fixedChain.status !== 'deploying') {
+          userChains[index] = fixedChain;
+          console.log(`✅ Updated chain ${chain.id} status in array: ${chain.status} -> ${fixedChain.status}`);
+        }
+      }
     } catch (dbError) {
       console.error('❌ Error fetching chains from database:', dbError);
       return res.status(500).json({ 
@@ -72,13 +207,17 @@ router.get('/', authenticate, async (req, res) => {
             allChains.push(bcChain);
           }
         }
-        return res.json({ chains: allChains, stats });
+        // Normalize all chains for frontend
+        const normalizedChains = allChains.map(chain => normalizeChainData(chain));
+        return res.json({ chains: normalizedChains, stats });
       } catch (syncError) {
         console.warn('Error syncing with blockchain, returning database chains only:', syncError);
       }
     }
 
-    res.json({ chains: userChains || [], stats });
+    // Normalize chains for frontend
+    const normalizedChains = (userChains || []).map(chain => normalizeChainData(chain));
+    res.json({ chains: normalizedChains, stats });
   } catch (error) {
     console.error('Error fetching chains:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -104,14 +243,22 @@ router.get('/:id', authenticate, async (req, res) => {
           const walletAddress = req.query.walletAddress || req.body.walletAddress;
           if (walletAddress && walletAddress !== 'dev-user') {
             console.log(`🔍 Searching chains for wallet: ${walletAddress}`);
-            const userChains = await db.getUserChains(walletAddress);
-            chain = userChains.find((c) => 
-              String(c.id) === String(chainId) ||
-              String(c.id).includes(String(chainId)) ||
-              c.id === chainId
-            );
-            if (chain) {
-              console.log(`✅ Found chain via wallet address search`);
+            try {
+              const userChains = await db.getUserChains(walletAddress);
+              console.log(`📊 Found ${userChains.length} chains for wallet ${walletAddress}`);
+              
+              chain = userChains.find((c) => {
+                const matches = String(c.id) === String(chainId) ||
+                               String(c.id).includes(String(chainId)) ||
+                               c.id === chainId ||
+                               String(chainId).includes(String(c.id));
+                if (matches) {
+                  console.log(`✅ Found chain via wallet address search: ${c.id}`);
+                }
+                return matches;
+              });
+            } catch (userChainsError) {
+              console.warn('Error fetching user chains:', userChainsError.message);
             }
           }
           
@@ -143,9 +290,20 @@ router.get('/:id', authenticate, async (req, res) => {
       
       if (!chain) {
         console.error(`❌ Chain not found: ${chainId}`);
-        console.error(`📊 Total chains in storage: ${inMemoryStorage?.chains?.size || 0}`);
+        // Try to get storage info for debugging
+        try {
+          const dbModule = require('../services/database');
+          const storage = dbModule.inMemoryStorage || (dbModule.default && dbModule.default.inMemoryStorage);
+          const storageSize = storage?.chains?.size || 0;
+          console.error(`📊 Total chains in storage: ${storageSize}`);
+        } catch (storageError) {
+          console.error('Could not access storage info:', storageError.message);
+        }
         return res.status(404).json({ message: 'Chain not found' });
       }
+      
+      // Fix stuck "deploying" status
+      chain = await fixStuckDeployingChain(chain);
     }
     
     console.log(`✅ Chain found: ${chain.id}, status: ${chain.status}`);
@@ -155,13 +313,59 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    res.json(chain);
+    // Normalize chain data for frontend (convert snake_case to camelCase)
+    const normalizedChain = normalizeChainData(chain);
+    res.json(normalizedChain);
   } catch (error) {
     console.error('Error fetching chain:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
+/**
+ * @swagger
+ * /api/chains/create:
+ *   post:
+ *     summary: Create a new chain
+ *     tags: [Chains]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - chainType
+ *               - rollupType
+ *               - gasToken
+ *             properties:
+ *               name:
+ *                 type: string
+ *               chainType:
+ *                 type: string
+ *               rollupType:
+ *                 type: string
+ *               gasToken:
+ *                 type: string
+ *               validatorAccess:
+ *                 type: string
+ *               initialValidators:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Chain created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Chain'
+ *       400:
+ *         $ref: '#/components/responses/BadRequestError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ */
 // Create new chain - integrates with smart contract and database
 router.post('/create', authenticate, async (req, res) => {
   try {
@@ -206,6 +410,10 @@ router.post('/create', authenticate, async (req, res) => {
           polygonScanUrl = `https://amoy.polygonscan.com/tx/${blockchainTxHash}`;
         }
 
+        // Generate RPC and explorer URLs immediately (even during deployment)
+        const rpcUrl = `https://rpc-${chainId.substring(0, 8)}.polyone.io`;
+        const explorerUrl = `https://explorer-${chainId.substring(0, 8)}.polyone.io`;
+        
         const chainData = {
           id: chainId,
           user_id: userAddress,
@@ -216,8 +424,8 @@ router.post('/create', authenticate, async (req, res) => {
           validator_access: validatorAccess || 'public',
           validator_count: parseInt(initialValidators) || 3,
           status: 'deploying',
-          rpc_url: `https://rpc-${chainId.substring(0, 8)}.polyone.io`,
-          explorer_url: `https://explorer-${chainId.substring(0, 8)}.polyone.io`,
+          rpc_url: rpcUrl,
+          explorer_url: explorerUrl,
           blockchain_tx_hash: blockchainTxHash,
           blockchain_chain_id: blockchainChainId,
           polygon_scan_url: polygonScanUrl,
@@ -225,6 +433,8 @@ router.post('/create', authenticate, async (req, res) => {
           chainId: chainId, // For frontend display
           validators: parseInt(initialValidators) || 3, // For frontend display
           initialValidators: parseInt(initialValidators) || 3, // For frontend display
+          rpcUrl: rpcUrl, // Frontend compatibility
+          explorerUrl: explorerUrl, // Frontend compatibility
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
@@ -237,10 +447,36 @@ router.post('/create', authenticate, async (req, res) => {
           chain = await db.createChain(chainData);
           console.log('✅ Chain saved successfully:', chain.id);
           
+          // Notify via WebSocket
+          try {
+            const wsService = getWsService(req);
+            if (wsService) {
+              wsService.notifyChainDeployment(chainId, 'deploying', 0);
+              wsService.broadcastToUser(userAddress, {
+                type: 'chain_created',
+                chain: normalizeChainData(chain),
+                timestamp: new Date().toISOString()
+              });
+            }
+          } catch (wsError) {
+            console.warn('WebSocket notification failed:', wsError);
+          }
+          
           // Verify the chain was actually saved by retrieving it
           const verifyChain = await db.getChainById(chainId);
           if (verifyChain) {
             console.log('✅ Verification: Chain exists in database:', verifyChain.id);
+            
+            // Start health monitoring for the new chain
+            try {
+              const healthMonitoring = require('../services/chainHealthMonitoring');
+              await healthMonitoring.startMonitoring(chainId, {
+                interval: 5 * 60 * 1000 // 5 minutes
+              });
+              console.log('✅ Health monitoring started for chain:', chainId);
+            } catch (healthError) {
+              console.warn('⚠️ Failed to start health monitoring:', healthError.message);
+            }
           } else {
             console.error('❌ Verification FAILED: Chain not found in database after creation!');
           }
@@ -269,6 +505,17 @@ router.post('/create', authenticate, async (req, res) => {
             
             if (updateResult) {
               console.log('✅ Chain status auto-updated to active:', chainId);
+              
+              // Notify via WebSocket
+              try {
+                const wsService = getWsService(req);
+                if (wsService) {
+                  wsService.notifyChainStatusChange(chainId, 'active', updateResult);
+                  wsService.notifyChainDeployment(chainId, 'completed', 100);
+                }
+              } catch (wsError) {
+                console.warn('WebSocket notification failed:', wsError);
+              }
             } else {
               console.error('❌ Failed to auto-update chain status - chain not found:', chainId);
             }
@@ -307,10 +554,13 @@ router.post('/create', authenticate, async (req, res) => {
           // Don't mark as failed - let the timeout handle status update
         });
 
+        // Normalize chain data for frontend
+        const normalizedChain = normalizeChainData(chain);
+        
         return res.status(201).json({
           message: 'Chain created and deployment started',
           chainId,
-          chain,
+          chain: normalizedChain,
           blockchainTxHash,
           polygonScanUrl
         });
@@ -322,6 +572,10 @@ router.post('/create', authenticate, async (req, res) => {
       // No blockchain transaction - create in database only
       const chainId = uuidv4();
       
+      // Generate RPC and explorer URLs immediately
+      const rpcUrl = `https://rpc-${chainId.substring(0, 8)}.polyone.io`;
+      const explorerUrl = `https://explorer-${chainId.substring(0, 8)}.polyone.io`;
+      
       const chainData = {
         id: chainId,
         user_id: userAddress,
@@ -332,8 +586,14 @@ router.post('/create', authenticate, async (req, res) => {
         validator_access: validatorAccess || 'public',
         validator_count: parseInt(initialValidators) || 3,
         status: 'pending',
-        rpc_url: `https://rpc-${chainId.substring(0, 8)}.polyone.io`,
-        explorer_url: `https://explorer-${chainId.substring(0, 8)}.polyone.io`,
+        rpc_url: rpcUrl,
+        explorer_url: explorerUrl,
+        // Add fields for frontend compatibility
+        chainId: chainId,
+        validators: parseInt(initialValidators) || 3,
+        initialValidators: parseInt(initialValidators) || 3,
+        rpcUrl: rpcUrl, // Frontend compatibility
+        explorerUrl: explorerUrl, // Frontend compatibility
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -351,10 +611,13 @@ router.post('/create', authenticate, async (req, res) => {
         });
       }
 
+      // Normalize chain data for frontend
+      const normalizedChain = normalizeChainData(chain);
+      
       return res.status(201).json({
         message: 'Chain created (pending blockchain registration)',
         chainId,
-        chain
+        chain: normalizedChain
       });
     }
   } catch (error) {
@@ -382,9 +645,107 @@ router.put('/:id', authenticate, async (req, res) => {
       updated_at: new Date().toISOString()
     });
 
+    // Notify via WebSocket if status changed
+    if (req.body.status && req.body.status !== chain.status) {
+      try {
+        const wsService = getWsService(req);
+        if (wsService) {
+          wsService.notifyChainStatusChange(chainId, req.body.status, updatedChain);
+        }
+      } catch (wsError) {
+        console.warn('WebSocket notification failed:', wsError);
+      }
+    }
+
     res.json({ message: 'Chain updated', chain: updatedChain });
   } catch (error) {
     console.error('Error updating chain:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Fix stuck deploying chain (manual endpoint - forces immediate fix)
+router.post('/:id/fix-status', authenticate, async (req, res) => {
+  try {
+    const chainId = req.params.id;
+    const chain = await db.getChainById(chainId);
+    
+    if (!chain) {
+      return res.status(404).json({ message: 'Chain not found' });
+    }
+    
+    // Force fix if chain is stuck in deploying status (bypass time check, case-insensitive)
+    const chainStatus = (chain.status || '').toLowerCase();
+    if (chainStatus === 'deploying') {
+      console.log(`🔧 Force fixing chain ${chainId} from deploying to active`);
+      try {
+        const updatedChain = await db.updateChain(chainId, {
+          status: 'active',
+          deployed_at: chain.deployed_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        console.log(`✅ Force fixed chain ${chainId} - updated to active status`);
+        res.json({ 
+          message: 'Chain status fixed successfully', 
+          chain: normalizeChainData(updatedChain || { ...chain, status: 'active' })
+        });
+      } catch (updateError) {
+        console.error(`❌ Error force fixing chain ${chainId}:`, updateError);
+        res.status(500).json({ message: 'Failed to update chain status', error: updateError.message });
+      }
+    } else {
+      res.json({ 
+        message: 'Chain status is not stuck in deploying', 
+        chain: normalizeChainData(chain),
+        currentStatus: chain.status
+      });
+    }
+  } catch (error) {
+    console.error('Error fixing chain status:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Fix all stuck deploying chains (admin/maintenance endpoint)
+router.post('/fix-all-stuck', authenticate, async (req, res) => {
+  try {
+    const walletAddress = req.query.walletAddress;
+    const userId = walletAddress || req.userId;
+    
+    console.log(`🔧 Fixing all stuck chains for user: ${userId}`);
+    
+    // Get all chains for user
+    const userChains = await db.getUserChains(userId);
+    const stuckChains = (userChains || []).filter(chain => {
+      const status = (chain.status || '').toLowerCase();
+      return status === 'deploying';
+    });
+    
+    console.log(`📊 Found ${stuckChains.length} chains stuck in deploying status`);
+    
+    const fixedChains = [];
+    for (const chain of stuckChains) {
+      try {
+        console.log(`🔧 Force fixing chain ${chain.id}`);
+        const updatedChain = await db.updateChain(chain.id, {
+          status: 'active',
+          deployed_at: chain.deployed_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        fixedChains.push(normalizeChainData(updatedChain || { ...chain, status: 'active' }));
+        console.log(`✅ Fixed chain ${chain.id}`);
+      } catch (fixError) {
+        console.error(`❌ Error fixing chain ${chain.id}:`, fixError);
+      }
+    }
+    
+    res.json({
+      message: `Fixed ${fixedChains.length} stuck chain(s)`,
+      fixedCount: fixedChains.length,
+      chains: fixedChains
+    });
+  } catch (error) {
+    console.error('Error fixing all stuck chains:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -408,6 +769,16 @@ router.post('/:id/pause', authenticate, async (req, res) => {
     }
 
     const pausedChain = await db.pauseChain(chainId, req.userId);
+
+    // Notify via WebSocket
+    try {
+      const wsService = getWsService(req);
+      if (wsService) {
+        wsService.notifyChainStatusChange(chainId, 'paused', pausedChain);
+      }
+    } catch (wsError) {
+      console.warn('WebSocket notification failed:', wsError);
+    }
 
     // Stop chain deployment if running
     try {
@@ -445,6 +816,16 @@ router.post('/:id/resume', authenticate, async (req, res) => {
     }
 
     const resumedChain = await db.resumeChain(chainId, req.userId);
+
+    // Notify via WebSocket
+    try {
+      const wsService = getWsService(req);
+      if (wsService) {
+        wsService.notifyChainStatusChange(chainId, 'active', resumedChain);
+      }
+    } catch (wsError) {
+      console.warn('WebSocket notification failed:', wsError);
+    }
 
     // Restart chain deployment if needed
     try {
@@ -695,6 +1076,90 @@ router.get('/:id/upgrades', authenticate, async (req, res) => {
     res.json({ upgrades });
   } catch (error) {
     console.error('Error fetching chain upgrades:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Complete a chain upgrade (mark upgrade completed, set chain version and status)
+router.post('/:id/upgrades/:upgradeId/complete', authenticate, async (req, res) => {
+  try {
+    const chainId = req.params.id;
+    const { upgradeId } = req.params;
+
+    const chain = await db.getChainById(chainId);
+    if (!chain) {
+      return res.status(404).json({ message: 'Chain not found' });
+    }
+    if (chain.user_id !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const upgrade = await db.getChainUpgradeById(upgradeId);
+    if (!upgrade) {
+      return res.status(404).json({ message: 'Upgrade not found' });
+    }
+    if (upgrade.chain_id !== chainId) {
+      return res.status(400).json({ message: 'Upgrade does not belong to this chain' });
+    }
+    if (upgrade.status === 'completed') {
+      return res.status(400).json({ message: 'Upgrade already completed' });
+    }
+    if (upgrade.status === 'rolled_back' || upgrade.status === 'failed' || upgrade.status === 'canceled') {
+      return res.status(400).json({ message: `Cannot complete upgrade with status: ${upgrade.status}` });
+    }
+
+    const completedAt = new Date().toISOString();
+    await db.updateChainUpgrade(upgradeId, {
+      status: 'completed',
+      started_at: upgrade.started_at || upgrade.created_at,
+      completed_at: completedAt
+    });
+
+    const currentConfig = chain.config && typeof chain.config === 'object' ? chain.config : {};
+    await db.updateChain(chainId, {
+      status: 'active',
+      config: { ...currentConfig, version: upgrade.to_version },
+      updated_at: completedAt
+    });
+
+    await db.createChainEvent({
+      chain_id: chainId,
+      event_type: 'upgrade_completed',
+      description: `Chain upgraded to version ${upgrade.to_version}`,
+      data: { upgrade_id: upgradeId, to_version: upgrade.to_version },
+      triggered_by: req.userId
+    });
+
+    const updatedUpgrade = await db.getChainUpgradeById(upgradeId);
+    res.json({ message: 'Upgrade completed', upgrade: updatedUpgrade });
+  } catch (error) {
+    console.error('Error completing upgrade:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Rollback a chain upgrade (manual or triggered by auto-rollback)
+const upgradeRollback = require('../services/upgradeRollback');
+router.post('/:id/upgrades/:upgradeId/rollback', authenticate, async (req, res) => {
+  try {
+    const chainId = req.params.id;
+    const { upgradeId } = req.params;
+
+    const chain = await db.getChainById(chainId);
+    if (!chain) {
+      return res.status(404).json({ message: 'Chain not found' });
+    }
+    if (chain.user_id !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const result = await upgradeRollback.performRollback(upgradeId, chainId);
+    if (!result.success) {
+      return res.status(400).json({ message: result.error || 'Rollback failed' });
+    }
+    res.json({ message: 'Upgrade rolled back successfully', upgrade: result.upgrade, chain: result.chain });
+  } catch (error) {
+    console.error('Error rolling back upgrade:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });

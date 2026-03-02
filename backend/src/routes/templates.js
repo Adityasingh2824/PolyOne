@@ -6,17 +6,58 @@ const db = require('../services/database');
 const { body, validationResult } = require('express-validator');
 const { deployChain } = require('../services/chainDeployment');
 
-// Middleware to verify JWT
+// Normalize chain data for frontend (same as chains.js)
+function normalizeChainData(chain) {
+  if (!chain) return null;
+  
+  return {
+    id: chain.id,
+    userId: chain.user_id || chain.userId,
+    name: chain.name,
+    chainType: chain.chain_type || chain.chainType,
+    rollupType: chain.rollup_type || chain.rollupType,
+    gasToken: chain.gas_token || chain.gasToken,
+    validatorAccess: chain.validator_access || chain.validatorAccess,
+    validators: chain.validator_count || chain.validators || chain.initialValidators,
+    initialValidators: chain.validator_count || chain.validators || chain.initialValidators,
+    status: chain.status || (chain.isActive ? 'active' : 'inactive'),
+    isActive: chain.isActive !== undefined ? chain.isActive : (chain.status === 'active'),
+    rpcUrl: chain.rpc_url || chain.rpcUrl,
+    explorerUrl: chain.explorer_url || chain.explorerUrl,
+    bridgeUrl: chain.bridge_url || chain.bridgeUrl,
+    chainId: chain.chainId || chain.id,
+    blockchainTxHash: chain.blockchain_tx_hash || chain.blockchainTxHash,
+    blockchainChainId: chain.blockchain_chain_id || chain.blockchainChainId,
+    templateId: chain.template_id || chain.templateId,
+    createdAt: chain.created_at || chain.createdAt,
+    updatedAt: chain.updated_at || chain.updatedAt,
+    deployedAt: chain.deployed_at || chain.deployedAt,
+    // Keep original fields for backward compatibility
+    ...chain
+  };
+}
+
+// Middleware to verify JWT (optional for development)
 const authenticate = (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
+      // For development, allow requests without token but set a default userId
+      // In production, this should return 401
+      if (process.env.NODE_ENV === 'development') {
+        req.userId = req.query.userId || req.body.walletAddress || 'dev-user';
+        return next();
+      }
       return res.status(401).json({ message: 'No token provided' });
     }
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.userId;
     next();
   } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      req.userId = req.query.userId || req.body.walletAddress || 'dev-user';
+      return next();
+    }
     res.status(401).json({ message: 'Invalid token' });
   }
 };
@@ -238,13 +279,16 @@ router.post('/:templateId/deploy', authenticate, [
 
     // Use wallet address if provided, otherwise use userId
     const userAddress = walletAddress || req.userId;
+    
+    console.log('📝 Template deployment - User address:', userAddress, 'Wallet address:', walletAddress, 'req.userId:', req.userId);
 
     // Create chain using existing chain creation logic
     const chainId = require('uuid').v4();
     
     const chainData = {
       id: chainId,
-      user_id: userAddress,
+      user_id: userAddress, // Store with wallet address or userId
+      userId: userAddress, // Also store as userId for frontend compatibility
       name,
       chain_type: chainConfig.chainType,
       rollup_type: chainConfig.rollupType,
@@ -260,15 +304,76 @@ router.post('/:templateId/deploy', authenticate, [
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+    
+    console.log('📋 Chain data to be saved:', JSON.stringify(chainData, null, 2));
 
     // Save to database
-    const chain = await db.createChain(chainData);
+    let chain;
+    try {
+      chain = await db.createChain(chainData);
+      console.log('✅ Chain created in database:', chainId);
+      console.log('📋 Created chain data:', JSON.stringify(chain, null, 2));
+      
+      // Verify the chain was actually saved by retrieving it (with retries)
+      let verifyChain = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          verifyChain = await db.getChainById(chainId);
+          if (verifyChain) {
+            console.log(`✅ Verification (attempt ${attempt + 1}): Chain exists in database:`, verifyChain.id);
+            // Use the verified chain to ensure we have the latest data
+            chain = verifyChain;
+            
+            // Start health monitoring for the new chain
+            try {
+              const healthMonitoring = require('../services/chainHealthMonitoring');
+              await healthMonitoring.startMonitoring(chainId, {
+                interval: 5 * 60 * 1000 // 5 minutes
+              });
+              console.log('✅ Health monitoring started for chain:', chainId);
+            } catch (healthError) {
+              console.warn('⚠️ Failed to start health monitoring:', healthError.message);
+            }
+            
+            break;
+          }
+        } catch (verifyError) {
+          console.warn(`⚠️ Verification attempt ${attempt + 1} failed:`, verifyError.message);
+        }
+        
+        // Wait a bit before retrying
+        if (attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
+      if (!verifyChain && !chain) {
+        console.error('❌ Chain could not be created or verified');
+        return res.status(500).json({ 
+          message: 'Chain created but could not be verified', 
+          error: 'Database verification failed'
+        });
+      }
+    } catch (dbError) {
+      console.error('❌ Error creating chain in database:', dbError);
+      console.error('❌ Error stack:', dbError.stack);
+      return res.status(500).json({ 
+        message: 'Failed to create chain in database', 
+        error: dbError.message 
+      });
+    }
 
     // Increment template deployment count
-    await templatesService.incrementDeploymentCount(templateId);
+    try {
+      await templatesService.incrementDeploymentCount(templateId);
+    } catch (countError) {
+      console.warn('⚠️ Failed to increment deployment count:', countError);
+      // Non-critical, continue
+    }
 
     // Start deployment if transaction hash provided
     if (blockchainTxHash) {
+      // Deploy asynchronously (don't wait for it)
       deployChain(chainId, {
         name,
         chainType: chainConfig.chainType,
@@ -284,15 +389,52 @@ router.post('/:templateId/deploy', authenticate, [
             explorer_url: result.endpoints?.explorer || chainData.explorer_url,
             deployed_at: new Date().toISOString()
           }).catch(err => console.error('Error updating chain after deployment:', err));
+        } else {
+          // Update status to indicate deployment failed
+          db.updateChain(chainId, {
+            status: 'failed'
+          }).catch(err => console.error('Error updating chain status:', err));
         }
       }).catch(error => {
         console.error('Deployment error:', error);
+        // Update status to indicate deployment failed
+        db.updateChain(chainId, {
+          status: 'failed'
+        }).catch(err => console.error('Error updating chain status:', err));
+      });
+    } else {
+      // Even without blockchain transaction, mark as pending for manual deployment
+      console.log('ℹ️ Chain created without blockchain transaction. Status: pending');
+    }
+
+    // Ensure we have a valid chain object
+    if (!chain) {
+      console.error('❌ No chain object available after creation');
+      return res.status(500).json({ 
+        message: 'Chain created but could not be retrieved',
+        error: 'Chain object is null'
       });
     }
 
+    // Normalize chain data for frontend
+    const normalizedChain = normalizeChainData(chain);
+    
+    // Ensure the chain ID is present
+    if (!normalizedChain || !normalizedChain.id) {
+      console.error('❌ Normalized chain missing ID:', normalizedChain);
+      return res.status(500).json({ 
+        message: 'Chain created but ID is missing',
+        error: 'Chain ID not found in response'
+      });
+    }
+
+    console.log('✅ Returning chain to frontend:', normalizedChain.id);
+
     res.status(201).json({
-      message: 'Chain deployed from template successfully',
-      chain,
+      success: true,
+      message: 'Chain created from template successfully',
+      chain: normalizedChain,
+      chainId: normalizedChain.id, // Explicitly include chainId for frontend
       template: {
         id: template.id,
         name: template.name,

@@ -23,7 +23,8 @@ import {
   Clock,
   Shield,
   Users,
-  Sparkles
+  Sparkles,
+  LogOut
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -40,7 +41,7 @@ const CHAIN_FACTORY_ABI = [
   "function getTotalChains() external view returns (uint256)"
 ]
 
-// Stat Card Component
+// Stat Card Component - Enhanced with premium effects
 const StatCard = ({ icon: Icon, label, value, change, gradient, delay }: {
   icon: any
   label: string
@@ -50,27 +51,70 @@ const StatCard = ({ icon: Icon, label, value, change, gradient, delay }: {
   delay: number
 }) => (
   <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay }}
-    whileHover={{ y: -4, scale: 1.02 }}
-    className="glass-card p-6 group"
+    initial={{ opacity: 0, y: 30, scale: 0.95 }}
+    animate={{ opacity: 1, y: 0, scale: 1 }}
+    transition={{ delay, type: 'spring', stiffness: 100 }}
+    whileHover={{ y: -6, scale: 1.02 }}
+    className="relative group"
   >
-    <div className="flex items-start justify-between mb-4">
-      <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-glow group-hover:shadow-glow-lg transition-shadow`}>
-        <Icon className="w-6 h-6 text-white" />
+    {/* Glow effect on hover */}
+    <motion.div 
+      className="absolute -inset-1 bg-gradient-to-br from-primary-500/20 to-accent-pink/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-60"
+      transition={{ duration: 0.3 }}
+    />
+    
+    <div className="relative glass-card p-6 border border-white/5 group-hover:border-primary-500/20 transition-all duration-300 overflow-hidden">
+      {/* Background pattern */}
+      <div className="absolute inset-0 bg-grid-dense opacity-5 group-hover:opacity-10 transition-opacity" />
+      
+      {/* Corner accent */}
+      <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-primary-500/10 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      
+      <div className="relative z-10">
+        <div className="flex items-start justify-between mb-4">
+          <motion.div 
+            className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg relative overflow-hidden`}
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            transition={{ type: 'spring', stiffness: 300 }}
+          >
+            <Icon className="w-7 h-7 text-white relative z-10" />
+            {/* Shine effect */}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-tr from-white/30 to-transparent"
+              initial={{ x: '-100%', y: '-100%' }}
+              whileHover={{ x: '100%', y: '100%' }}
+              transition={{ duration: 0.5 }}
+            />
+          </motion.div>
+          <motion.span 
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary-500/10 border border-primary-500/20 text-xs font-semibold text-primary-300"
+            whileHover={{ scale: 1.05 }}
+          >
+            <ArrowUpRight className="w-3 h-3" />
+            {change}
+          </motion.span>
+        </div>
+        
+        <motion.div 
+          className="text-4xl font-extrabold mb-2 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent"
+          initial={{ opacity: 0, x: -10 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: delay + 0.2 }}
+        >
+          {value}
+        </motion.div>
+        <div className="text-sm text-gray-400 font-medium uppercase tracking-wide">{label}</div>
+        
+        {/* Bottom accent line */}
+        <motion.div 
+          className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-primary-500 to-accent-pink group-hover:w-full transition-all duration-500"
+        />
       </div>
-      <span className="text-xs font-medium text-primary-400 flex items-center gap-1">
-        <ArrowUpRight className="w-3 h-3" />
-        {change}
-      </span>
     </div>
-    <div className="text-3xl font-bold mb-1">{value}</div>
-    <div className="text-sm text-gray-400">{label}</div>
   </motion.div>
 )
 
-// Quick Action Card Component
+// Quick Action Card Component - Enhanced with premium effects
 const QuickActionCard = ({ 
   icon: Icon, 
   title, 
@@ -86,45 +130,88 @@ const QuickActionCard = ({
   gradient: string
   delay: number
 }) => (
-  <Link href={href}>
+  <Link href={href} className="block h-full">
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay }}
-      whileHover={{ y: -6, scale: 1.02 }}
+      transition={{ delay, type: 'spring', stiffness: 100 }}
+      whileHover={{ y: -10 }}
       whileTap={{ scale: 0.98 }}
-      className="glass-card p-6 h-full group cursor-pointer relative overflow-hidden"
+      className="relative h-full group"
     >
-      {/* Hover gradient */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-10 transition-opacity`} />
+      {/* Animated glow effect */}
+      <motion.div 
+        className={`absolute -inset-1 bg-gradient-to-br ${gradient} rounded-[28px] blur-2xl opacity-0 group-hover:opacity-40`}
+        transition={{ duration: 0.3 }}
+      />
       
-      {/* Grid pattern */}
-      <div className="absolute inset-0 bg-grid-dense opacity-10" />
-      
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-4">
+      <div className="relative card-premium card-shine p-7 h-full cursor-pointer">
+        {/* Animated border glow */}
+        <motion.div
+          className="absolute inset-0 rounded-[28px] opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+          style={{
+            background: `linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(236, 72, 153, 0.3))`,
+            padding: '1px',
+            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+            WebkitMaskComposite: 'xor',
+            maskComposite: 'exclude',
+          }}
+        />
+        
+        {/* Background pattern with gradient */}
+        <div className="absolute inset-0 bg-grid-dense opacity-5 group-hover:opacity-15 transition-opacity duration-500 rounded-[28px]" />
+        
+        {/* Corner decoration */}
+        <motion.div 
+          className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/10 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+        />
+        
+        <div className="relative z-10">
+          <div className="flex items-center justify-between mb-5">
+            <motion.div 
+              className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg relative overflow-hidden`}
+              whileHover={{ scale: 1.1, rotate: 5 }}
+              transition={{ type: 'spring', stiffness: 300 }}
+            >
+              <Icon className="w-8 h-8 text-white relative z-10" />
+              {/* Shine effect */}
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-tr from-white/40 to-transparent"
+                initial={{ x: '-100%', y: '-100%' }}
+                whileHover={{ x: '100%', y: '100%' }}
+                transition={{ duration: 0.6 }}
+              />
+            </motion.div>
+            <motion.div
+              className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center group-hover:border-primary-500/30 group-hover:bg-white/10 transition-all"
+              whileHover={{ x: 5, scale: 1.05 }}
+            >
+              <ChevronRight className="w-6 h-6 text-gray-500 group-hover:text-white transition-colors" />
+            </motion.div>
+          </div>
+          
+          <h3 className="text-xl font-bold mb-3 group-hover:text-gradient transition-all duration-300">{title}</h3>
+          <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors leading-relaxed">{description}</p>
+          
+          {/* Action hint */}
           <motion.div 
-            className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-glow-purple group-hover:shadow-glow-lg transition-shadow`}
-            whileHover={{ rotate: 5, scale: 1.1 }}
+            className="mt-5 flex items-center gap-2 text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <Icon className="w-7 h-7 text-white" />
-          </motion.div>
-          <motion.div
-            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center"
-            whileHover={{ x: 5 }}
-          >
-            <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" />
+            <span className="text-sm font-semibold">Get Started</span>
+            <motion.div
+              animate={{ x: [0, 5, 0] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            >
+              <ArrowUpRight className="w-4 h-4" />
+            </motion.div>
           </motion.div>
         </div>
-        
-        <h3 className="text-xl font-bold mb-2 group-hover:text-gradient transition-all">{title}</h3>
-        <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">{description}</p>
       </div>
     </motion.div>
   </Link>
 )
 
-// Chain Card Component
+// Chain Card Component - Enhanced with premium styling
 const ChainCard = ({ chain, index, onClick, onCopy, onExternal }: {
   chain: any
   index: number
@@ -133,111 +220,124 @@ const ChainCard = ({ chain, index, onClick, onCopy, onExternal }: {
   onExternal: () => void
 }) => (
   <motion.div
-    initial={{ opacity: 0, y: 20 }}
+    initial={{ opacity: 0, y: 25 }}
     animate={{ opacity: 1, y: 0 }}
-    transition={{ delay: index * 0.05 }}
-    whileHover={{ y: -4 }}
-    className="glass-card p-6 group cursor-pointer relative overflow-hidden"
+    transition={{ delay: index * 0.08, type: 'spring', stiffness: 100 }}
+    whileHover={{ y: -6 }}
+    className="relative group"
     onClick={onClick}
   >
-    {/* Hover effect */}
-    <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 to-accent-pink/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+    {/* Glow effect on hover */}
+    <motion.div 
+      className="absolute -inset-1 bg-gradient-to-br from-primary-500/20 to-accent-pink/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-50"
+      transition={{ duration: 0.3 }}
+    />
     
-    <div className="relative z-10">
-      <div className="flex items-start gap-4">
-        <motion.div 
-          className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-accent-pink flex items-center justify-center shadow-glow-purple flex-shrink-0"
-          whileHover={{ rotate: 5, scale: 1.1 }}
-        >
-          <Globe className="w-7 h-7 text-white" />
-        </motion.div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-bold text-lg truncate group-hover:text-gradient transition-all">
-              {chain.name}
-            </h3>
-            {chain.onChainRegistered && (
-              <span className="badge badge-success text-xs">On-Chain</span>
-            )}
-            {!chain.onChainRegistered && (
-              <span className="badge badge-warning text-xs">Local</span>
-            )}
-          </div>
+    <div className="relative card-premium p-6 cursor-pointer">
+      {/* Animated border */}
+      <motion.div
+        className="absolute inset-0 rounded-[24px] opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+        style={{
+          background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(236, 72, 153, 0.2))',
+          padding: '1px',
+          WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+          WebkitMaskComposite: 'xor',
+          maskComposite: 'exclude',
+        }}
+      />
+      
+      {/* Background pattern */}
+      <div className="absolute inset-0 bg-grid-dense opacity-5 group-hover:opacity-10 transition-opacity rounded-[24px]" />
+      
+      <div className="relative z-10">
+        <div className="flex items-start gap-5">
+          <motion.div 
+            className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500 via-accent-pink to-accent-cyan flex items-center justify-center shadow-lg relative overflow-hidden flex-shrink-0"
+            whileHover={{ rotate: 5, scale: 1.1 }}
+            transition={{ type: 'spring', stiffness: 300 }}
+          >
+            <Globe className="w-8 h-8 text-white relative z-10" />
+            {/* Animated shine */}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-tr from-white/30 to-transparent"
+              initial={{ x: '-100%', y: '-100%' }}
+              animate={{ x: ['100%', '-100%'], y: ['100%', '-100%'] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </motion.div>
           
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <span className="badge badge-purple">{chain.chainType}</span>
-            <span className="badge badge-info">{chain.rollupType}</span>
-            <span className="text-xs text-gray-500">{chain.gasToken} Gas</span>
-          </div>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-            <div className="p-2 rounded-lg bg-white/5">
-              <div className="text-gray-500 mb-1">Chain ID</div>
-              <div className="font-semibold font-mono text-[10px] truncate" title={chain.id || chain.chainId || 'N/A'}>
-                {chain.id ? chain.id.substring(0, 8) + '...' : (chain.chainId || 'N/A')}
-              </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-2">
+              <h3 className="font-bold text-xl truncate group-hover:text-gradient transition-all duration-300">
+                {chain.name}
+              </h3>
+              {chain.onChainRegistered ? (
+                <motion.span 
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-semibold border border-emerald-500/30"
+                  whileHover={{ scale: 1.05 }}
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  On-Chain
+                </motion.span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs font-semibold border border-amber-500/30">
+                  Local
+                </span>
+              )}
             </div>
-            <div className="p-2 rounded-lg bg-white/5">
-              <div className="text-gray-500 mb-1">Validators</div>
-              <div className="font-semibold">
-                {chain.validator_count || chain.validators || chain.initialValidators || 0}
-              </div>
+            
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="px-3 py-1 rounded-lg bg-primary-500/15 text-primary-300 text-xs font-semibold border border-primary-500/20">
+                {chain.chainType}
+              </span>
+              <span className="px-3 py-1 rounded-lg bg-cyan-500/15 text-cyan-300 text-xs font-semibold border border-cyan-500/20">
+                {chain.rollupType}
+              </span>
+              <span className="text-xs text-gray-500 font-medium">{chain.gasToken} Gas</span>
             </div>
-            <div className="p-2 rounded-lg bg-white/5">
-              <div className="text-gray-500 mb-1">Status</div>
-              <div className={`font-semibold ${
-                chain.status === 'active' || chain.isActive 
-                  ? 'text-accent-emerald' 
-                  : chain.status === 'deploying'
-                  ? 'text-yellow-400'
-                  : 'text-gray-400'
-              }`}>
-                {chain.status === 'active' || chain.isActive 
-                  ? '● Active' 
-                  : chain.status === 'deploying'
-                  ? '● Deploying'
-                  : chain.status === 'failed'
-                  ? '● Failed'
-                  : '○ Inactive'}
-              </div>
-            </div>
-            <div className="p-2 rounded-lg bg-white/5">
-              <div className="text-gray-500 mb-1">Created</div>
-              <div className="font-semibold">
-                {chain.created_at || chain.createdAt 
-                  ? new Date(chain.created_at || chain.createdAt).toLocaleDateString() 
-                  : 'N/A'}
-              </div>
+            
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Chain ID', value: chain.id ? chain.id.substring(0, 8) + '...' : (chain.chainId || 'N/A'), mono: true },
+                { label: 'Validators', value: chain.validator_count || chain.validators || chain.initialValidators || 0 },
+                { 
+                  label: 'Status', 
+                  value: chain.status === 'active' || chain.isActive ? '● Active' : chain.status === 'deploying' ? '● Deploying' : chain.status === 'failed' ? '● Failed' : '○ Inactive',
+                  color: chain.status === 'active' || chain.isActive ? 'text-emerald-400' : chain.status === 'deploying' ? 'text-amber-400' : 'text-gray-400'
+                },
+                { label: 'Created', value: chain.created_at || chain.createdAt ? new Date(chain.created_at || chain.createdAt).toLocaleDateString() : 'N/A' },
+              ].map((item) => (
+                <div key={item.label} className="p-3 rounded-xl bg-white/5 border border-white/5 group-hover:border-white/10 transition-colors">
+                  <div className="text-xs text-gray-500 mb-1">{item.label}</div>
+                  <div className={`font-semibold text-sm ${item.mono ? 'font-mono text-xs' : ''} ${item.color || 'text-white'}`}>
+                    {item.value}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
-      </div>
-      
-      {/* Action buttons */}
-      <div className="flex items-center gap-2 mt-4 pt-4 border-t border-white/5">
-        <button
-          onClick={(e) => { e.stopPropagation(); onCopy(chain.rpcUrl || ''); }}
-          className="flex-1 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm flex items-center justify-center gap-2 transition-all"
-        >
-          <Copy className="w-4 h-4" />
-          RPC
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onClick(); }}
-          className="flex-1 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm flex items-center justify-center gap-2 transition-all"
-        >
-          <Activity className="w-4 h-4" />
-          Details
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onExternal(); }}
-          disabled={!chain.polygonScanUrl && !chain.blockchainTxHash && !chain.explorerUrl}
-          className="flex-1 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-        >
-          <ExternalLink className="w-4 h-4" />
-          Explorer
-        </button>
+        
+        {/* Action buttons */}
+        <div className="flex items-center gap-3 mt-5 pt-5 border-t border-white/5">
+          {[
+            { icon: Copy, label: 'RPC', onClick: (e: any) => { e.stopPropagation(); onCopy(chain.rpcUrl || ''); } },
+            { icon: Activity, label: 'Details', onClick: (e: any) => { e.stopPropagation(); onClick(); } },
+            { icon: ExternalLink, label: 'Explorer', onClick: (e: any) => { e.stopPropagation(); onExternal(); }, disabled: !chain.polygonScanUrl && !chain.blockchainTxHash && !chain.explorerUrl },
+          ].map((action) => (
+            <motion.button
+              key={action.label}
+              onClick={action.onClick}
+              disabled={action.disabled}
+              whileHover={{ scale: 1.02, y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-primary-500/30 text-sm font-medium flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <action.icon className="w-4 h-4" />
+              {action.label}
+            </motion.button>
+          ))}
+        </div>
       </div>
     </div>
   </motion.div>

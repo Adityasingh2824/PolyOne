@@ -68,7 +68,18 @@ CREATE TABLE IF NOT EXISTS organizations (
   slug VARCHAR(255) UNIQUE NOT NULL,
   description TEXT,
   logo_url TEXT,
+  favicon_url TEXT,
   website TEXT,
+  
+  -- White-label branding
+  support_email VARCHAR(255),
+  primary_color VARCHAR(7) DEFAULT '#a855f7',
+  secondary_color VARCHAR(7) DEFAULT '#ec4899',
+  accent_color VARCHAR(7) DEFAULT '#06b6d4',
+  background_color VARCHAR(7) DEFAULT '#030014',
+  custom_domain VARCHAR(255) UNIQUE,
+  terms_of_service_url TEXT,
+  custom_css TEXT,
   
   -- Owner
   owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -827,6 +838,30 @@ CREATE TABLE IF NOT EXISTS usage_records (
 );
 
 -- ============================================================================
+-- BILLING - SERVICE CREDITS (partner appchains, offset operational costs)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS service_credits (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  
+  balance DECIMAL(12,2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+  is_partner_appchain BOOLEAN DEFAULT false,
+  
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  
+  UNIQUE(user_id, organization_id),
+  CHECK (user_id IS NOT NULL OR organization_id IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_service_credits_user_id ON service_credits(user_id);
+CREATE INDEX IF NOT EXISTS idx_service_credits_org_id ON service_credits(organization_id);
+
+-- Add service credits applied to invoices (offset costs)
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS service_credits_applied DECIMAL(10,2) DEFAULT 0;
+
+-- ============================================================================
 -- CHAIN BACKUPS TABLE
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS chain_backups (
@@ -1345,6 +1380,27 @@ $$ LANGUAGE plpgsql;
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS) Policies
 -- ============================================================================
+-- NOTE: The backend uses SUPABASE_SERVICE_ROLE_KEY which bypasses RLS entirely.
+-- These policies apply when using the anon key or a custom JWT via PostgREST.
+-- We use a helper function to extract user_id from either Supabase Auth JWTs
+-- (auth.uid()) or custom JWTs (request.jwt.claim.userId).
+-- ============================================================================
+
+-- Helper: extract current user ID from JWT (supports both Supabase Auth and custom JWT)
+CREATE OR REPLACE FUNCTION current_user_id() RETURNS UUID AS $$
+BEGIN
+  -- Try Supabase Auth first
+  BEGIN
+    RETURN auth.uid();
+  EXCEPTION WHEN OTHERS THEN
+    -- Fall back to custom JWT claim
+    RETURN COALESCE(
+      (current_setting('request.jwt.claim.userId', true))::UUID,
+      (current_setting('request.jwt.claims', true)::jsonb ->> 'userId')::UUID
+    );
+  END;
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 -- Enable RLS on all tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -1363,28 +1419,28 @@ ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 -- Users policies
 DROP POLICY IF EXISTS "Users can view own data" ON users;
 CREATE POLICY "Users can view own data" ON users
-  FOR SELECT USING (auth.uid() = id);
+  FOR SELECT USING (current_user_id() = id);
 
 DROP POLICY IF EXISTS "Users can update own data" ON users;
 CREATE POLICY "Users can update own data" ON users
-  FOR UPDATE USING (auth.uid() = id);
+  FOR UPDATE USING (current_user_id() = id);
 
 -- Chains policies
 DROP POLICY IF EXISTS "Users can view own chains" ON chains;
 CREATE POLICY "Users can view own chains" ON chains
-  FOR SELECT USING (auth.uid() = user_id OR is_public = true);
+  FOR SELECT USING (current_user_id() = user_id OR is_public = true);
 
 DROP POLICY IF EXISTS "Users can create chains" ON chains;
 CREATE POLICY "Users can create chains" ON chains
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+  FOR INSERT WITH CHECK (current_user_id() = user_id);
 
 DROP POLICY IF EXISTS "Users can update own chains" ON chains;
 CREATE POLICY "Users can update own chains" ON chains
-  FOR UPDATE USING (auth.uid() = user_id);
+  FOR UPDATE USING (current_user_id() = user_id);
 
 DROP POLICY IF EXISTS "Users can delete own chains" ON chains;
 CREATE POLICY "Users can delete own chains" ON chains
-  FOR DELETE USING (auth.uid() = user_id);
+  FOR DELETE USING (current_user_id() = user_id);
 
 -- Validators policies
 DROP POLICY IF EXISTS "Users can view validators of own chains" ON validators;
@@ -1393,7 +1449,7 @@ CREATE POLICY "Users can view validators of own chains" ON validators
     EXISTS (
       SELECT 1 FROM chains 
       WHERE chains.id = validators.chain_id 
-      AND chains.user_id = auth.uid()
+      AND chains.user_id = current_user_id()
     )
   );
 
@@ -1403,38 +1459,38 @@ CREATE POLICY "Users can manage validators of own chains" ON validators
     EXISTS (
       SELECT 1 FROM chains 
       WHERE chains.id = validators.chain_id 
-      AND chains.user_id = auth.uid()
+      AND chains.user_id = current_user_id()
     )
   );
 
 -- Bridge transactions policies
 DROP POLICY IF EXISTS "Users can view own bridge transactions" ON bridge_transactions;
 CREATE POLICY "Users can view own bridge transactions" ON bridge_transactions
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (current_user_id() = user_id);
 
 -- Notifications policies
 DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
 CREATE POLICY "Users can view own notifications" ON notifications
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (current_user_id() = user_id);
 
 DROP POLICY IF EXISTS "Users can update own notifications" ON notifications;
 CREATE POLICY "Users can update own notifications" ON notifications
-  FOR UPDATE USING (auth.uid() = user_id);
+  FOR UPDATE USING (current_user_id() = user_id);
 
 -- Subscriptions policies
 DROP POLICY IF EXISTS "Users can view own subscriptions" ON subscriptions;
 CREATE POLICY "Users can view own subscriptions" ON subscriptions
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (current_user_id() = user_id);
 
 -- Invoices policies
 DROP POLICY IF EXISTS "Users can view own invoices" ON invoices;
 CREATE POLICY "Users can view own invoices" ON invoices
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (current_user_id() = user_id);
 
 -- API Keys policies
 DROP POLICY IF EXISTS "Users can manage own API keys" ON api_keys;
 CREATE POLICY "Users can manage own API keys" ON api_keys
-  FOR ALL USING (auth.uid() = user_id);
+  FOR ALL USING (current_user_id() = user_id);
 
 -- ============================================================================
 -- VIEWS for Common Queries

@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../services/database');
+const emailService = require('../services/emailService');
 const { body, validationResult } = require('express-validator');
 
 // Generate JWT token
@@ -205,6 +206,351 @@ router.get('/me', async (req, res) => {
   } catch (error) {
     console.error('Auth error:', error);
     res.status(401).json({ message: 'Invalid token' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Request password reset
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Password reset email sent (if user exists)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: If an account exists with that email, a password reset link has been sent.
+ *       400:
+ *         description: Validation error
+ *         $ref: '#/components/responses/ValidationError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+// Request password reset
+router.post('/forgot-password', [
+  body('email').isEmail().normalizeEmail()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+
+    const { email } = req.body;
+
+    // Find user
+    const user = await db.getUserByEmail(email);
+    
+    // Always return success to prevent email enumeration
+    // Only send email if user exists
+    if (user) {
+      // Generate password reset token (expires in 1 hour)
+      const resetToken = jwt.sign(
+        { userId: user.id, type: 'password-reset' },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      // Send password reset email
+      try {
+        await emailService.sendPasswordResetEmail(user.email, resetToken, user.organization_id);
+      } catch (emailError) {
+        console.error('Error sending password reset email:', emailError);
+        // Continue even if email fails - don't reveal if user exists
+      }
+    }
+
+    res.json({
+      message: 'If an account exists with that email, a password reset link has been sent.'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset password with token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Password reset token from email
+ *                 example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 description: New password (min 8 chars, must contain uppercase, lowercase, and number)
+ *                 example: NewPassword123
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Password reset successfully. You can now login with your new password.
+ *       400:
+ *         description: Invalid or expired token, or validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+// Reset password with token
+router.post('/reset-password', [
+  body('token').notEmpty().withMessage('Reset token is required'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+
+    const { token, password } = req.body;
+
+    try {
+      // Verify reset token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      if (decoded.type !== 'password-reset') {
+        return res.status(400).json({ message: 'Invalid token type' });
+      }
+
+      // Find user
+      const user = await db.getUserById(decoded.userId);
+      if (!user) {
+        return res.status(400).json({ message: 'Invalid or expired reset token' });
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Update password
+      await db.updateUser(user.id, {
+        password_hash: hashedPassword,
+        password_changed_at: new Date().toISOString()
+      });
+
+      res.json({
+        message: 'Password reset successfully. You can now login with your new password.'
+      });
+    } catch (jwtError) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/verify-email:
+ *   post:
+ *     summary: Verify email address
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Email verification token from email
+ *                 example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+// Verify email
+router.post('/verify-email', [
+  body('token').notEmpty().withMessage('Verification token is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+
+    const { token } = req.body;
+
+    try {
+      // Verify email token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      if (decoded.type !== 'email-verification') {
+        return res.status(400).json({ message: 'Invalid token type' });
+      }
+
+      // Find user
+      const user = await db.getUserById(decoded.userId);
+      if (!user) {
+        return res.status(400).json({ message: 'Invalid or expired verification token' });
+      }
+
+      // Update email verified status
+      await db.updateUser(user.id, {
+        email_verified: true
+      });
+
+      res.json({
+        message: 'Email verified successfully'
+      });
+    } catch (jwtError) {
+      return res.status(400).json({ message: 'Invalid or expired verification token' });
+    }
+  } catch (error) {
+    console.error('Verify email error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/resend-verification:
+ *   post:
+ *     summary: Resend email verification
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Verification email sent (if user exists and not already verified)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Verification email sent successfully
+ *       400:
+ *         description: Email already verified or validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+// Resend verification email
+router.post('/resend-verification', [
+  body('email').isEmail().normalizeEmail()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+
+    const { email } = req.body;
+
+    // Find user
+    const user = await db.getUserByEmail(email);
+    
+    if (!user) {
+      // Don't reveal if user exists
+      return res.json({
+        message: 'If an account exists with that email, a verification email has been sent.'
+      });
+    }
+
+    if (user.email_verified) {
+      return res.status(400).json({ message: 'Email is already verified' });
+    }
+
+    // Generate verification token (expires in 24 hours)
+    const verificationToken = jwt.sign(
+      { userId: user.id, type: 'email-verification' },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // Send verification email
+    try {
+      const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`;
+      await emailService.sendEmailVerificationEmail(user.email, verificationToken, user.organization_id);
+    } catch (emailError) {
+      console.error('Error sending verification email:', emailError);
+      return res.status(500).json({ message: 'Failed to send verification email' });
+    }
+
+    res.json({
+      message: 'Verification email sent successfully'
+    });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

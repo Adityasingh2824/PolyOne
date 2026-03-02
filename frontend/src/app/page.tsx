@@ -39,35 +39,19 @@ import toast from 'react-hot-toast'
 const AnimatedBackground = () => {
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none">
-      {/* Main gradient background */}
-      <div className="absolute inset-0 bg-gradient-dark" />
+      {/* Mesh gradient background */}
+      <div className="absolute inset-0 bg-mesh-gradient" />
       
-      {/* Animated orbs */}
+      {/* Animated orbs with morph effect */}
       <motion.div
-        className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] rounded-full"
+        className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] animate-morph hero-glow-orb"
         style={{
-          background: 'radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(168, 85, 247, 0.25) 0%, transparent 60%)',
         }}
         animate={{
           scale: [1, 1.2, 1],
-          x: [0, 50, 0],
-          y: [0, 30, 0],
-        }}
-        transition={{
-          duration: 20,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-      />
-      <motion.div
-        className="absolute bottom-[-20%] right-[-10%] w-[900px] h-[900px] rounded-full"
-        style={{
-          background: 'radial-gradient(circle, rgba(236, 72, 153, 0.12) 0%, transparent 70%)',
-        }}
-        animate={{
-          scale: [1.2, 1, 1.2],
-          x: [0, -50, 0],
-          y: [0, -30, 0],
+          x: [0, 60, 0],
+          y: [0, 40, 0],
         }}
         transition={{
           duration: 25,
@@ -76,23 +60,71 @@ const AnimatedBackground = () => {
         }}
       />
       <motion.div
-        className="absolute top-[30%] right-[20%] w-[600px] h-[600px] rounded-full"
+        className="absolute bottom-[-20%] right-[-10%] w-[900px] h-[900px] animate-morph hero-glow-orb"
         style={{
-          background: 'radial-gradient(circle, rgba(6, 182, 212, 0.1) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(236, 72, 153, 0.2) 0%, transparent 60%)',
+          animationDelay: '2s',
         }}
         animate={{
-          scale: [1, 1.3, 1],
-          rotate: [0, 180, 360],
+          scale: [1.2, 1, 1.2],
+          x: [0, -60, 0],
+          y: [0, -40, 0],
         }}
         transition={{
           duration: 30,
           repeat: Infinity,
-          ease: 'linear',
+          ease: 'easeInOut',
+        }}
+      />
+      <motion.div
+        className="absolute top-[40%] right-[10%] w-[600px] h-[600px] animate-morph hero-glow-orb"
+        style={{
+          background: 'radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, transparent 60%)',
+          animationDelay: '4s',
+        }}
+        animate={{
+          scale: [1, 1.3, 1],
+          x: [0, -30, 30, 0],
+          y: [0, 50, -20, 0],
+        }}
+        transition={{
+          duration: 35,
+          repeat: Infinity,
+          ease: 'easeInOut',
+        }}
+      />
+      <motion.div
+        className="absolute top-[60%] left-[10%] w-[500px] h-[500px] animate-morph hero-glow-orb"
+        style={{
+          background: 'radial-gradient(circle, rgba(16, 185, 129, 0.12) 0%, transparent 60%)',
+          animationDelay: '6s',
+        }}
+        animate={{
+          scale: [1.1, 1, 1.1],
+          x: [0, 40, 0],
+          y: [0, -30, 0],
+        }}
+        transition={{
+          duration: 22,
+          repeat: Infinity,
+          ease: 'easeInOut',
         }}
       />
       
-      {/* Grid pattern overlay */}
-      <div className="absolute inset-0 bg-grid opacity-30" />
+      {/* Grid pattern overlay with gradient fade */}
+      <div className="absolute inset-0 bg-grid opacity-40" style={{
+        maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 70%)',
+        WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 70%)',
+      }} />
+      
+      {/* Subtle scan line effect */}
+      <div className="absolute inset-0 opacity-[0.02] pointer-events-none overflow-hidden">
+        <motion.div
+          className="absolute w-full h-[2px] bg-gradient-to-r from-transparent via-primary-500/50 to-transparent"
+          animate={{ y: ['0vh', '100vh'] }}
+          transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+        />
+      </div>
       
       {/* Noise texture */}
       <div className="absolute inset-0 bg-noise" />
@@ -100,17 +132,37 @@ const AnimatedBackground = () => {
   )
 }
 
-// Floating Particles Component
+// Floating Particles Component - Enhanced with variety
 const FloatingParticles = () => {
-  const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; size: number; duration: number }>>([])
+  const [particles, setParticles] = useState<Array<{ 
+    id: number; 
+    x: number; 
+    y: number; 
+    size: number; 
+    duration: number;
+    delay: number;
+    type: 'dot' | 'ring' | 'star';
+    color: string;
+  }>>([])
   
   useEffect(() => {
-    const newParticles = Array.from({ length: 50 }, (_, i) => ({
+    const colors = [
+      'rgba(168, 85, 247, 0.3)',
+      'rgba(236, 72, 153, 0.25)',
+      'rgba(6, 182, 212, 0.25)',
+      'rgba(16, 185, 129, 0.2)',
+    ]
+    const types: Array<'dot' | 'ring' | 'star'> = ['dot', 'dot', 'dot', 'ring', 'star']
+    
+    const newParticles = Array.from({ length: 40 }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
       y: Math.random() * 100,
-      size: Math.random() * 3 + 1,
-      duration: Math.random() * 10 + 10,
+      size: Math.random() * 4 + 2,
+      duration: Math.random() * 15 + 15,
+      delay: Math.random() * 8,
+      type: types[Math.floor(Math.random() * types.length)],
+      color: colors[Math.floor(Math.random() * colors.length)],
     }))
     setParticles(newParticles)
   }, [])
@@ -120,23 +172,29 @@ const FloatingParticles = () => {
       {particles.map((particle) => (
         <motion.div
           key={particle.id}
-          className="absolute rounded-full bg-primary-500/20"
+          className="absolute"
           style={{
             left: `${particle.x}%`,
             top: `${particle.y}%`,
             width: particle.size,
             height: particle.size,
+            backgroundColor: particle.type === 'dot' ? particle.color : 'transparent',
+            borderRadius: '50%',
+            border: particle.type === 'ring' ? `1px solid ${particle.color}` : 'none',
+            boxShadow: particle.type === 'star' ? `0 0 ${particle.size * 2}px ${particle.color}` : 'none',
           }}
           animate={{
-            y: [0, -100, 0],
-            opacity: [0.2, 0.6, 0.2],
-            scale: [1, 1.5, 1],
+            y: [0, -150, 0],
+            x: [0, Math.random() * 40 - 20, 0],
+            opacity: [0.1, 0.5, 0.1],
+            scale: [1, 1.8, 1],
+            rotate: particle.type === 'star' ? [0, 180, 360] : 0,
           }}
           transition={{
             duration: particle.duration,
             repeat: Infinity,
             ease: 'easeInOut',
-            delay: Math.random() * 5,
+            delay: particle.delay,
           }}
         />
       ))}
@@ -194,7 +252,7 @@ const StatCounter = ({ end, suffix = '', prefix = '' }: { end: number; suffix?: 
   )
 }
 
-// Feature Card Component
+// Feature Card Component - Enhanced with premium effects
 const FeatureCard = ({ icon: Icon, title, description, gradient, delay, href }: { 
   icon: any; 
   title: string; 
@@ -205,39 +263,73 @@ const FeatureCard = ({ icon: Icon, title, description, gradient, delay, href }: 
 }) => {
   const cardContent = (
     <motion.div
-      initial={{ opacity: 0, y: 30 }}
+      initial={{ opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ delay, duration: 0.5 }}
-      whileHover={{ y: -8, scale: 1.02 }}
-      className="group relative"
+      viewport={{ once: true, margin: '-50px' }}
+      transition={{ delay, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -12 }}
+      className="group relative h-full"
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-primary-500/20 to-accent-pink/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-60 transition-opacity duration-500" />
-      <div className="relative glass-card p-8 h-full cursor-pointer overflow-hidden">
-        {/* Grid pattern */}
-        <div className="absolute inset-0 bg-grid-dense opacity-20" />
+      {/* Glow effect on hover */}
+      <motion.div 
+        className="absolute -inset-1 bg-gradient-to-br from-primary-500/30 via-accent-pink/20 to-accent-cyan/30 rounded-[28px] blur-2xl"
+        initial={{ opacity: 0 }}
+        whileHover={{ opacity: 0.7 }}
+        transition={{ duration: 0.4 }}
+      />
+      
+      <div className="relative card-premium card-shine p-8 h-full cursor-pointer">
+        {/* Animated gradient border */}
+        <motion.div 
+          className="absolute inset-0 rounded-[28px] opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+          style={{
+            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(236, 72, 153, 0.2), rgba(6, 182, 212, 0.2))',
+            padding: '1px',
+            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+            WebkitMaskComposite: 'xor',
+            maskComposite: 'exclude',
+          }}
+        />
         
-        {/* Animated border */}
-        <div className="absolute inset-0 rounded-3xl border border-transparent group-hover:border-primary-500/30 transition-colors duration-500" />
+        {/* Subtle grid pattern */}
+        <div className="absolute inset-0 bg-grid-dense opacity-10 rounded-[28px]" />
+        
+        {/* Corner accent */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/10 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         
         <div className="relative z-10">
           <motion.div 
-            className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-6 shadow-glow-purple group-hover:shadow-glow-lg transition-shadow duration-500`}
-            whileHover={{ rotate: [0, -5, 5, 0], scale: 1.1 }}
-            transition={{ duration: 0.5 }}
+            className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-6 shadow-lg relative overflow-hidden`}
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 15 }}
           >
-            <Icon className="w-7 h-7 text-white" />
+            <Icon className="w-8 h-8 text-white relative z-10" />
+            {/* Shine effect on icon */}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-tr from-white/30 to-transparent"
+              initial={{ x: '-100%', y: '-100%' }}
+              whileHover={{ x: '100%', y: '100%' }}
+              transition={{ duration: 0.6 }}
+            />
           </motion.div>
-          <h3 className="text-xl font-bold mb-3 group-hover:text-gradient transition-all duration-300">{title}</h3>
+          
+          <h3 className="text-xl font-bold mb-3 group-hover:text-gradient transition-all duration-500">{title}</h3>
           <p className="text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors duration-300">{description}</p>
           
           <motion.div 
-            className="mt-6 flex items-center gap-2 text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-            initial={{ x: -10 }}
-            whileHover={{ x: 0 }}
+            className="mt-6 flex items-center gap-2 text-primary-400"
+            initial={{ opacity: 0, x: -10 }}
+            whileInView={{ opacity: 0.7 }}
+            whileHover={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3 }}
           >
             <span className="text-sm font-semibold">Learn more</span>
-            <ArrowRight className="w-4 h-4" />
+            <motion.div
+              animate={{ x: [0, 5, 0] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <ArrowRight className="w-4 h-4" />
+            </motion.div>
           </motion.div>
         </div>
       </div>
@@ -246,7 +338,7 @@ const FeatureCard = ({ icon: Icon, title, description, gradient, delay, href }: 
 
   if (href) {
     return (
-      <Link href={href}>
+      <Link href={href} className="block h-full">
         {cardContent}
       </Link>
     )
@@ -527,80 +619,137 @@ export default function Home() {
       {/* Hero Section */}
       <section ref={heroRef} className="relative min-h-screen flex items-center justify-center pt-32 pb-20 px-6 overflow-hidden">
         <motion.div style={{ y, opacity }} className="relative z-10 max-w-6xl mx-auto text-center">
-          {/* Badge */}
+          {/* Badge - Enhanced with glow */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass border border-primary-500/20 mb-8"
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
+            className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full glass border border-primary-500/30 mb-8 animate-breathe"
           >
             <motion.div
-              animate={{ scale: [1, 1.2, 1] }}
+              animate={{ scale: [1, 1.3, 1], opacity: [0.7, 1, 0.7] }}
               transition={{ duration: 2, repeat: Infinity }}
-              className="w-2 h-2 bg-accent-emerald rounded-full"
+              className="w-2.5 h-2.5 bg-accent-emerald rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"
             />
-            <span className="text-sm text-gray-300">Now live on Polygon Amoy Testnet</span>
-            <ArrowUpRight className="w-4 h-4 text-primary-400" />
+            <span className="text-sm text-gray-200 font-medium">Now live on Polygon Amoy Testnet</span>
+            <motion.div
+              animate={{ x: [0, 3, 0], y: [0, -3, 0] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              <ArrowUpRight className="w-4 h-4 text-primary-400" />
+            </motion.div>
           </motion.div>
 
-          {/* Main Heading */}
+          {/* Main Heading - Enhanced with glow */}
           <motion.h1
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold leading-[1.1] mb-6"
+            transition={{ delay: 0.2, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+            className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-extrabold leading-[1.05] mb-6 tracking-tight"
           >
-            <span className="text-white">Launch Your Own</span>
+            <motion.span 
+              className="text-white inline-block hero-text-shadow"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 }}
+            >
+              Launch Your Own
+            </motion.span>
             <br />
-            <span className="text-gradient animate-gradient bg-[length:200%_auto]">
+            <motion.span 
+              className="text-gradient animate-gradient bg-[length:200%_auto] inline-block"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 }}
+            >
               Polygon App Chain
-            </span>
+            </motion.span>
           </motion.h1>
 
-          {/* Subheading */}
+          {/* Tagline - Enhanced with typewriter feel */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.5 }}
+            className="mb-6"
+          >
+            <p className="text-xl sm:text-2xl md:text-3xl font-bold">
+              <span className="text-gradient-purple">One click</span>
+              <span className="text-gray-500 mx-3">•</span>
+              <span className="text-gradient-pink">One chain</span>
+              <span className="text-gray-500 mx-3">•</span>
+              <span className="text-gradient-cyan">PolyOne</span>
+            </p>
+          </motion.div>
+
+          {/* Subheading - Enhanced with highlighted keywords */}
           <motion.p
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="text-lg sm:text-xl text-gray-400 max-w-3xl mx-auto mb-10 leading-relaxed"
+            transition={{ delay: 0.6 }}
+            className="text-lg sm:text-xl text-gray-400 max-w-3xl mx-auto mb-12 leading-relaxed"
           >
             Deploy custom blockchain networks powered by Polygon CDK in minutes.
-            <span className="text-white"> Enterprise-grade security</span>, 
-            <span className="text-white"> unlimited scalability</span>, and 
-            <span className="text-white"> seamless interoperability</span>.
+            <motion.span 
+              className="text-white font-medium"
+              whileHover={{ color: '#a855f7' }}
+              transition={{ duration: 0.2 }}
+            > Enterprise-grade security</motion.span>, 
+            <motion.span 
+              className="text-white font-medium"
+              whileHover={{ color: '#ec4899' }}
+              transition={{ duration: 0.2 }}
+            > unlimited scalability</motion.span>, and 
+            <motion.span 
+              className="text-white font-medium"
+              whileHover={{ color: '#06b6d4' }}
+              transition={{ duration: 0.2 }}
+            > seamless interoperability</motion.span>.
           </motion.p>
 
-          {/* CTA Buttons */}
+          {/* CTA Buttons - Enhanced with glow effects */}
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16"
+            transition={{ delay: 0.7 }}
+            className="flex flex-col sm:flex-row gap-5 justify-center items-center mb-16"
           >
             <Link href="/dashboard/create">
               <motion.button
-                whileHover={{ scale: 1.05, boxShadow: '0 0 40px rgba(168, 85, 247, 0.4)' }}
+                whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.98 }}
-                className="group relative px-8 py-4 rounded-2xl bg-gradient-to-r from-primary-500 via-accent-pink to-primary-500 bg-[length:200%_auto] animate-gradient font-bold text-lg shadow-glow-lg overflow-hidden"
+                className="btn-glow group relative px-10 py-5 rounded-2xl bg-gradient-to-r from-primary-500 via-accent-pink to-primary-500 bg-[length:200%_auto] animate-gradient font-bold text-lg shadow-glow-lg overflow-hidden"
               >
-                <span className="relative z-10 flex items-center gap-2">
+                <span className="relative z-10 flex items-center gap-3">
+                  <Sparkles className="w-5 h-5" />
                   Start Building
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  <motion.div
+                    animate={{ x: [0, 5, 0] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  >
+                    <ArrowRight className="w-5 h-5" />
+                  </motion.div>
                 </span>
+                {/* Shine effect */}
                 <motion.div
-                  className="absolute inset-0 bg-white/20"
-                  initial={{ x: '-100%' }}
-                  whileHover={{ x: '100%' }}
-                  transition={{ duration: 0.5 }}
+                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12"
+                  initial={{ x: '-200%' }}
+                  whileHover={{ x: '200%' }}
+                  transition={{ duration: 0.8 }}
                 />
               </motion.button>
             </Link>
             <motion.button
-              whileHover={{ scale: 1.05 }}
+              whileHover={{ scale: 1.05, borderColor: 'rgba(168, 85, 247, 0.5)' }}
               whileTap={{ scale: 0.98 }}
-              className="group px-8 py-4 rounded-2xl border border-white/20 hover:border-primary-500/50 hover:bg-white/5 font-semibold text-lg transition-all flex items-center gap-2"
+              className="group px-10 py-5 rounded-2xl border-2 border-white/20 hover:bg-white/5 font-semibold text-lg transition-all flex items-center gap-3 backdrop-blur-sm"
             >
-              <Play className="w-5 h-5" />
+              <motion.div
+                className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center"
+                whileHover={{ scale: 1.1, rotate: 5 }}
+              >
+                <Play className="w-5 h-5 fill-white" />
+              </motion.div>
               Watch Demo
             </motion.button>
           </motion.div>
@@ -650,52 +799,113 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* Stats Section */}
-      <section className="py-20 px-6 relative">
-        <div className="max-w-6xl mx-auto">
+      {/* Stats Section - Enhanced */}
+      <section className="py-24 px-6 relative">
+        {/* Section background accent */}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary-900/5 to-transparent" />
+        
+        <div className="max-w-6xl mx-auto relative z-10">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             {stats.map((stat, i) => (
               <motion.div
                 key={stat.label}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="glass-card p-6 text-center group hover:border-primary-500/40 transition-all"
+                initial={{ opacity: 0, y: 40, scale: 0.9 }}
+                whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                viewport={{ once: true, margin: '-50px' }}
+                transition={{ delay: i * 0.1, type: 'spring', stiffness: 100 }}
+                whileHover={{ y: -8, scale: 1.02 }}
+                className="relative group"
               >
-                <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-gradient-to-br from-primary-500/20 to-accent-pink/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <stat.icon className="w-6 h-6 text-primary-400" />
+                {/* Glow on hover */}
+                <motion.div 
+                  className="absolute -inset-1 bg-gradient-to-br from-primary-500/30 to-accent-pink/30 rounded-3xl blur-xl opacity-0 group-hover:opacity-60"
+                  transition={{ duration: 0.3 }}
+                />
+                
+                <div className="relative glass-card p-8 text-center border border-white/5 group-hover:border-primary-500/30 transition-all duration-500">
+                  {/* Animated icon container */}
+                  <motion.div 
+                    className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-primary-500/20 to-accent-pink/20 flex items-center justify-center relative overflow-hidden"
+                    whileHover={{ scale: 1.1, rotate: 5 }}
+                    transition={{ type: 'spring', stiffness: 300 }}
+                  >
+                    <stat.icon className="w-7 h-7 text-primary-400 relative z-10" />
+                    <motion.div
+                      className="absolute inset-0 bg-gradient-to-tr from-primary-500/30 to-transparent"
+                      animate={{ rotate: [0, 360] }}
+                      transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+                    />
+                  </motion.div>
+                  
+                  {/* Stat value with glow */}
+                  <div className="text-4xl sm:text-5xl font-extrabold mb-3 text-gradient text-glow">
+                    <StatCounter end={stat.value} suffix={stat.suffix} />
+                  </div>
+                  
+                  {/* Label */}
+                  <div className="text-sm text-gray-400 font-medium uppercase tracking-wider">{stat.label}</div>
+                  
+                  {/* Bottom accent line */}
+                  <motion.div 
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-0.5 bg-gradient-to-r from-primary-500 to-accent-pink group-hover:w-1/2 transition-all duration-500"
+                  />
                 </div>
-                <div className="text-3xl sm:text-4xl font-bold mb-2 text-gradient">
-                  <StatCounter end={stat.value} suffix={stat.suffix} />
-                </div>
-                <div className="text-sm text-gray-400">{stat.label}</div>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section id="features" className="py-32 px-6 relative">
-        <div className="max-w-6xl mx-auto">
+      {/* Features Section - Enhanced */}
+      <section id="features" className="py-32 px-6 relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-primary-500/10 via-transparent to-transparent blur-3xl pointer-events-none" />
+        
+        <div className="max-w-6xl mx-auto relative z-10">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center mb-16"
+            transition={{ duration: 0.6 }}
+            className="text-center mb-20"
           >
-            <div className="badge badge-purple mb-4">Features</div>
-            <h2 className="text-4xl sm:text-5xl font-bold mb-6">
-              Everything You Need to
-              <span className="text-gradient block">Build at Scale</span>
+            {/* Badge with animation */}
+            <motion.div 
+              className="inline-flex items-center gap-2 badge badge-purple mb-6"
+              whileHover={{ scale: 1.05 }}
+            >
+              <Sparkles className="w-4 h-4" />
+              Features
+            </motion.div>
+            
+            {/* Section title */}
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold mb-6 tracking-tight">
+              <span className="text-white">Everything You Need to</span>
+              <motion.span 
+                className="text-gradient block mt-2"
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.2 }}
+              >
+                Build at Scale
+              </motion.span>
             </h2>
-            <p className="text-gray-400 max-w-2xl mx-auto text-lg">
-              PolyOne provides all the tools and infrastructure you need to launch, manage, and scale your blockchain.
-            </p>
+            
+            {/* Description */}
+            <motion.p 
+              className="text-gray-400 max-w-2xl mx-auto text-lg leading-relaxed"
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.3 }}
+            >
+              PolyOne provides all the tools and infrastructure you need to launch, manage, and scale your blockchain with enterprise-grade reliability.
+            </motion.p>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Feature cards grid */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((feature, i) => (
               <FeatureCard key={feature.title} {...feature} delay={i * 0.1} />
             ))}
@@ -703,18 +913,29 @@ export default function Home() {
         </div>
       </section>
 
-      {/* How It Works Section */}
+      {/* How It Works Section - Enhanced */}
       <section id="how-it-works" className="py-32 px-6 relative overflow-hidden">
+        {/* Background effects */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary-900/10 to-transparent" />
+        <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-primary-500/30 to-transparent" />
+        <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-primary-500/30 to-transparent" />
+        
         <div className="max-w-6xl mx-auto relative z-10">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center mb-16"
+            transition={{ duration: 0.6 }}
+            className="text-center mb-20"
           >
-            <div className="badge badge-info mb-4">How It Works</div>
-            <h2 className="text-4xl sm:text-5xl font-bold mb-6">
+            <motion.div 
+              className="inline-flex items-center gap-2 badge badge-info mb-6"
+              whileHover={{ scale: 1.05 }}
+            >
+              <Workflow className="w-4 h-4" />
+              How It Works
+            </motion.div>
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold mb-6 tracking-tight">
               Launch in
               <span className="text-gradient"> Three Steps</span>
             </h2>
@@ -723,34 +944,74 @@ export default function Home() {
             </p>
           </motion.div>
 
-          <div className="grid lg:grid-cols-3 gap-8">
+          <div className="grid lg:grid-cols-3 gap-8 relative">
+            {/* Connection lines for desktop */}
+            <div className="hidden lg:block absolute top-28 left-[20%] right-[20%] h-0.5">
+              <motion.div 
+                className="h-full bg-gradient-to-r from-primary-500/50 via-accent-pink/50 to-accent-cyan/50"
+                initial={{ scaleX: 0 }}
+                whileInView={{ scaleX: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 1, delay: 0.5 }}
+              />
+            </div>
+            
             {steps.map((step, i) => (
               <motion.div
                 key={step.number}
-                initial={{ opacity: 0, y: 30 }}
+                initial={{ opacity: 0, y: 40 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.2 }}
+                transition={{ delay: i * 0.2, type: 'spring', stiffness: 100 }}
+                whileHover={{ y: -8 }}
                 className="relative group"
               >
-                {/* Connection Line */}
-                {i < steps.length - 1 && (
-                  <div className="hidden lg:block absolute top-20 left-[60%] w-[80%] h-0.5 bg-gradient-to-r from-primary-500/50 to-transparent" />
-                )}
-                
-                <div className="glass-card p-8 h-full relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/10 to-transparent rounded-bl-full" />
+                <div className="card-premium p-8 h-full relative overflow-hidden">
+                  {/* Corner accent */}
+                  <motion.div 
+                    className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-primary-500/15 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                  />
                   
-                  <div className="text-6xl font-bold text-primary-500/20 mb-6 font-mono">
+                  {/* Step number - Large background */}
+                  <motion.div 
+                    className="absolute top-4 right-4 text-8xl font-black text-primary-500/10 font-mono select-none"
+                    initial={{ opacity: 0, scale: 0.5 }}
+                    whileInView={{ opacity: 1, scale: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.2 + 0.3 }}
+                  >
                     {step.number}
+                  </motion.div>
+                  
+                  {/* Icon container with pulse ring */}
+                  <div className="relative mb-8">
+                    <motion.div 
+                      className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-cyan flex items-center justify-center shadow-lg relative z-10"
+                      whileHover={{ scale: 1.1, rotate: 5 }}
+                      transition={{ type: 'spring', stiffness: 300 }}
+                    >
+                      <step.icon className="w-8 h-8 text-white" />
+                    </motion.div>
+                    {/* Pulse ring effect */}
+                    <motion.div
+                      className="absolute inset-0 rounded-2xl bg-primary-500/30"
+                      animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    />
                   </div>
                   
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-cyan flex items-center justify-center mb-6 shadow-glow-purple group-hover:scale-110 transition-transform">
-                    <step.icon className="w-7 h-7 text-white" />
+                  {/* Step indicator badge */}
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/10 border border-primary-500/20 text-primary-300 text-sm font-medium mb-4">
+                    Step {step.number}
                   </div>
                   
-                  <h3 className="text-xl font-bold mb-3">{step.title}</h3>
+                  <h3 className="text-2xl font-bold mb-4 group-hover:text-gradient transition-all duration-300">{step.title}</h3>
                   <p className="text-gray-400 leading-relaxed">{step.description}</p>
+                  
+                  {/* Bottom accent */}
+                  <motion.div 
+                    className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-primary-500/0 via-primary-500/50 to-primary-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                  />
                 </div>
               </motion.div>
             ))}
@@ -758,109 +1019,197 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* CTA Section - Enhanced */}
       <section className="py-32 px-6 relative">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="relative overflow-hidden"
+            transition={{ duration: 0.8 }}
+            className="relative"
           >
-            {/* Background Glow */}
-            <div className="absolute inset-0 bg-gradient-to-r from-primary-500/20 via-accent-pink/20 to-accent-cyan/20 rounded-4xl blur-3xl" />
+            {/* Animated background glow */}
+            <motion.div 
+              className="absolute -inset-4 bg-gradient-to-r from-primary-500/30 via-accent-pink/30 to-accent-cyan/30 rounded-[40px] blur-3xl"
+              animate={{
+                opacity: [0.3, 0.5, 0.3],
+                scale: [1, 1.02, 1],
+              }}
+              transition={{ duration: 4, repeat: Infinity }}
+            />
             
-            <div className="relative glass-card p-12 sm:p-16 text-center border-primary-500/20">
-              {/* Pattern */}
+            <div className="relative card-premium p-12 sm:p-16 lg:p-20 text-center overflow-hidden">
+              {/* Animated grid pattern */}
               <div className="absolute inset-0 bg-grid opacity-20" />
               
+              {/* Floating orbs inside */}
+              <motion.div
+                className="absolute top-10 left-10 w-32 h-32 bg-primary-500/20 rounded-full blur-2xl"
+                animate={{ y: [0, -20, 0], x: [0, 10, 0] }}
+                transition={{ duration: 6, repeat: Infinity }}
+              />
+              <motion.div
+                className="absolute bottom-10 right-10 w-40 h-40 bg-accent-pink/20 rounded-full blur-2xl"
+                animate={{ y: [0, 20, 0], x: [0, -10, 0] }}
+                transition={{ duration: 8, repeat: Infinity }}
+              />
+              
               <div className="relative z-10">
+                {/* Animated rocket icon */}
                 <motion.div
-                  initial={{ scale: 0 }}
-                  whileInView={{ scale: 1 }}
+                  initial={{ scale: 0, rotate: -180 }}
+                  whileInView={{ scale: 1, rotate: 0 }}
                   viewport={{ once: true }}
-                  transition={{ type: 'spring', stiffness: 200 }}
-                  className="w-20 h-20 mx-auto mb-8 rounded-3xl bg-gradient-to-br from-primary-500 to-accent-pink flex items-center justify-center shadow-glow-lg"
+                  transition={{ type: 'spring', stiffness: 150, delay: 0.2 }}
+                  className="relative w-24 h-24 mx-auto mb-10"
                 >
-                  <Rocket className="w-10 h-10 text-white" />
+                  <motion.div
+                    className="w-full h-full rounded-3xl bg-gradient-to-br from-primary-500 via-accent-pink to-accent-cyan flex items-center justify-center shadow-glow-lg"
+                    animate={{ rotate: [0, 5, -5, 0] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    <Rocket className="w-12 h-12 text-white" />
+                  </motion.div>
+                  {/* Glow ring */}
+                  <motion.div
+                    className="absolute inset-0 rounded-3xl border-2 border-primary-500/50"
+                    animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0, 0.5] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                  />
                 </motion.div>
                 
-                <h2 className="text-4xl sm:text-5xl font-bold mb-6">
-                  Ready to Build the Future?
-                </h2>
-                <p className="text-gray-400 text-lg mb-10 max-w-2xl mx-auto">
-                  Join thousands of developers building the next generation of blockchain applications on PolyOne.
-                </p>
+                <motion.h2 
+                  className="text-4xl sm:text-5xl lg:text-6xl font-extrabold mb-6 tracking-tight"
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.3 }}
+                >
+                  Ready to Build the{' '}
+                  <span className="text-gradient">Future</span>?
+                </motion.h2>
                 
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <motion.p 
+                  className="text-gray-400 text-lg sm:text-xl mb-12 max-w-2xl mx-auto leading-relaxed"
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.4 }}
+                >
+                  Join thousands of developers building the next generation of blockchain applications on PolyOne.
+                </motion.p>
+                
+                <motion.div 
+                  className="flex flex-col sm:flex-row gap-5 justify-center"
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.5 }}
+                >
                   <Link href="/dashboard/create">
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.98 }}
-                      className="px-8 py-4 rounded-2xl bg-gradient-to-r from-primary-500 to-accent-pink font-bold text-lg shadow-glow-lg flex items-center gap-2 mx-auto sm:mx-0"
+                      className="btn-glow px-10 py-5 rounded-2xl bg-gradient-to-r from-primary-500 to-accent-pink font-bold text-lg shadow-glow-lg flex items-center gap-3 mx-auto sm:mx-0"
                     >
+                      <Rocket className="w-5 h-5" />
                       Deploy Your Chain
                       <ArrowRight className="w-5 h-5" />
                     </motion.button>
                   </Link>
                   <Link href="/docs">
                     <motion.button
-                      whileHover={{ scale: 1.05 }}
+                      whileHover={{ scale: 1.05, borderColor: 'rgba(168, 85, 247, 0.5)' }}
                       whileTap={{ scale: 0.98 }}
-                      className="px-8 py-4 rounded-2xl border border-white/20 hover:border-primary-500/50 font-semibold text-lg transition-all flex items-center gap-2 mx-auto sm:mx-0"
+                      className="px-10 py-5 rounded-2xl border-2 border-white/20 font-semibold text-lg transition-all flex items-center gap-3 mx-auto sm:mx-0 backdrop-blur-sm hover:bg-white/5"
                     >
+                      <Code2 className="w-5 h-5" />
                       Read Documentation
-                      <ExternalLink className="w-5 h-5" />
                     </motion.button>
                   </Link>
-                </div>
+                </motion.div>
               </div>
             </div>
           </motion.div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 py-16 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid md:grid-cols-4 gap-12 mb-12">
+      {/* Footer - Enhanced */}
+      <footer className="relative border-t border-white/5 py-20 px-6 overflow-hidden">
+        {/* Background accent */}
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-gradient-radial from-primary-500/10 to-transparent blur-3xl pointer-events-none" />
+        
+        <div className="max-w-6xl mx-auto relative z-10">
+          <div className="grid md:grid-cols-5 gap-12 mb-16">
             {/* Brand */}
-            <div className="md:col-span-1">
-              <Link href="/" className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 via-accent-pink to-accent-cyan flex items-center justify-center">
-                  <Rocket className="w-5 h-5 text-white" />
+            <div className="md:col-span-2">
+              <Link href="/" className="flex items-center gap-3 mb-6 group">
+                <motion.div 
+                  className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 via-accent-pink to-accent-cyan flex items-center justify-center shadow-glow-purple"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                >
+                  <Rocket className="w-6 h-6 text-white" />
+                </motion.div>
+                <div>
+                  <span className="font-bold text-xl block group-hover:text-gradient transition-all">PolyOne</span>
+                  <span className="text-xs text-gray-500">Polygon App Chains</span>
                 </div>
-                <span className="font-bold text-lg">PolyOne</span>
               </Link>
-              <p className="text-gray-400 text-sm mb-6">
-                The most powerful platform for launching Polygon app chains.
+              <p className="text-gray-400 text-sm mb-8 max-w-sm leading-relaxed">
+                The most powerful platform for launching Polygon app chains. Deploy, scale, and manage your blockchain infrastructure with ease.
               </p>
-              <div className="flex gap-4">
-                <a href="#" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                  <Twitter className="w-5 h-5 text-gray-400" />
-                </a>
-                <a href="#" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                  <Github className="w-5 h-5 text-gray-400" />
-                </a>
-                <a href="#" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                  <MessageCircle className="w-5 h-5 text-gray-400" />
-                </a>
+              <div className="flex gap-3">
+                {[
+                  { icon: Twitter, href: '#', label: 'Twitter' },
+                  { icon: Github, href: '#', label: 'GitHub' },
+                  { icon: MessageCircle, href: '#', label: 'Discord' },
+                ].map((social) => (
+                  <motion.a 
+                    key={social.label}
+                    href={social.href}
+                    whileHover={{ scale: 1.1, y: -2 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-primary-500/30 hover:bg-white/10 transition-all group"
+                  >
+                    <social.icon className="w-5 h-5 text-gray-400 group-hover:text-primary-400 transition-colors" />
+                  </motion.a>
+                ))}
               </div>
             </div>
             
             {/* Links */}
             {[
-              { title: 'Product', links: ['Features', 'Pricing', 'Documentation', 'Changelog'] },
-              { title: 'Company', links: ['About', 'Blog', 'Careers', 'Contact'] },
-              { title: 'Resources', links: ['Community', 'Support', 'Status', 'Terms'] },
+              { title: 'Product', links: [
+                { name: 'Features', href: '#features' },
+                { name: 'Templates', href: '/dashboard/templates' },
+                { name: 'Documentation', href: '/docs' },
+                { name: 'Changelog', href: '#' },
+              ]},
+              { title: 'Company', links: [
+                { name: 'About', href: '#' },
+                { name: 'Blog', href: '#' },
+                { name: 'Careers', href: '#' },
+                { name: 'Contact', href: '/support' },
+              ]},
+              { title: 'Resources', links: [
+                { name: 'Community', href: '#' },
+                { name: 'Support', href: '/support' },
+                { name: 'Status', href: '#' },
+                { name: 'Terms', href: '/terms' },
+              ]},
             ].map((section) => (
               <div key={section.title}>
-                <h4 className="font-semibold mb-4">{section.title}</h4>
+                <h4 className="font-semibold mb-5 text-white">{section.title}</h4>
                 <ul className="space-y-3">
                   {section.links.map((link) => (
-                    <li key={link}>
-                      <Link href="#" className="text-gray-400 hover:text-white transition-colors text-sm">
-                        {link}
+                    <li key={link.name}>
+                      <Link 
+                        href={link.href} 
+                        className="text-gray-400 hover:text-white transition-colors text-sm flex items-center gap-2 group"
+                      >
+                        <span className="w-0 h-px bg-primary-500 group-hover:w-2 transition-all" />
+                        {link.name}
                       </Link>
                     </li>
                   ))}
@@ -869,14 +1218,39 @@ export default function Home() {
             ))}
           </div>
           
-          <div className="border-t border-white/5 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+          {/* Newsletter */}
+          <div className="glass-card p-8 mb-12">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div>
+                <h4 className="font-bold text-lg mb-2">Stay Updated</h4>
+                <p className="text-gray-400 text-sm">Get the latest updates on new features and releases.</p>
+              </div>
+              <div className="flex gap-3 w-full md:w-auto">
+                <input 
+                  type="email" 
+                  placeholder="Enter your email"
+                  className="flex-1 md:w-64 px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-primary-500/50 focus:outline-none text-sm"
+                />
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-accent-pink font-semibold text-sm whitespace-nowrap"
+                >
+                  Subscribe
+                </motion.button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Bottom bar */}
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-8 border-t border-white/5">
             <p className="text-gray-500 text-sm">
-              © 2025 PolyOne. Built for Polygon Buildathon.
+              © 2026 PolyOne. Built for Polygon Buildathon.
             </p>
-            <div className="flex gap-6 text-sm">
-              <Link href="#" className="text-gray-400 hover:text-white transition-colors">Privacy</Link>
-              <Link href="#" className="text-gray-400 hover:text-white transition-colors">Terms</Link>
-              <Link href="#" className="text-gray-400 hover:text-white transition-colors">Cookies</Link>
+            <div className="flex gap-8 text-sm">
+              <Link href="#" className="text-gray-400 hover:text-white transition-colors">Privacy Policy</Link>
+              <Link href="/terms" className="text-gray-400 hover:text-white transition-colors">Terms of Service</Link>
+              <Link href="#" className="text-gray-400 hover:text-white transition-colors">Cookie Settings</Link>
             </div>
           </div>
         </div>

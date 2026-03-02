@@ -102,27 +102,40 @@ export default function TemplatesPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        {/* Header - Enhanced */}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6"
+        >
           <div>
-            <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-primary-400 to-accent-pink bg-clip-text text-transparent">
-              Chain Templates Marketplace
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary-500/10 border border-primary-500/20 mb-4"
+            >
+              <Sparkles className="w-4 h-4 text-primary-400" />
+              <span className="text-xs font-semibold text-primary-300 uppercase tracking-wider">Marketplace</span>
+            </motion.div>
+            <h1 className="text-3xl lg:text-4xl font-extrabold mb-3">
+              <span className="text-white">Chain Templates</span>{' '}
+              <span className="text-gradient">Marketplace</span>
             </h1>
-            <p className="text-gray-400">
+            <p className="text-gray-400 text-lg">
               Deploy pre-configured chains optimized for your use case
             </p>
           </div>
           <Link href="/dashboard/templates/create">
             <motion.button
-              whileHover={{ scale: 1.02 }}
+              whileHover={{ scale: 1.02, y: -2 }}
               whileTap={{ scale: 0.98 }}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-primary-500 to-accent-pink font-semibold text-sm shadow-glow-purple hover:shadow-glow-lg transition-all flex items-center gap-2"
+              className="px-6 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-accent-pink font-semibold shadow-glow-purple hover:shadow-glow-lg transition-all flex items-center gap-2"
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-5 h-5" />
               Submit Template
             </motion.button>
           </Link>
-        </div>
+        </motion.div>
 
         {/* Search and Filters */}
         <div className="glass-card p-4 space-y-4">
@@ -314,5 +327,30 @@ export default function TemplatesPage() {
     </DashboardLayout>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

@@ -66,14 +66,13 @@ async function registerChainWithAggLayer(chainId, chainConfig) {
         return await registerChainOnChain(chainId, chainConfig);
       }
       
-      // Simulated registration for MVP
-      return {
-        success: true,
-        registrationId: `reg-${chainId}-${Date.now()}`,
-        agglayerChainId: chainId,
-        method: 'simulated',
-        note: 'Using simulated registration for MVP. Connect to real AggLayer in production.'
-      };
+      // If all methods fail, throw error instead of simulating
+      logger.error(`All AggLayer registration methods failed for chain ${chainId}`);
+      throw new Error(
+        `Failed to register chain with AggLayer. ` +
+        `Please verify AGGLAYER_ENDPOINT and AGGLAYER_API_KEY environment variables, ` +
+        `or configure AGGLAYER_CONTRACT and PRIVATE_KEY for on-chain registration.`
+      );
     }
   } catch (error) {
     logger.error(`Failed to register chain ${chainId} with AggLayer:`, error);
@@ -157,14 +156,12 @@ async function submitProof(chainId, proofData) {
     } catch (apiError) {
       logger.warn(`API proof submission failed: ${apiError.message}`);
       
-      // Simulated submission for MVP
-      return {
-        success: true,
-        proofId: `proof-${chainId}-${Date.now()}`,
-        status: 'pending',
-        method: 'simulated',
-        note: 'Using simulated proof submission for MVP'
-      };
+      // If API submission fails, throw error instead of simulating
+      logger.error(`Proof submission failed for chain ${chainId}: ${apiError.message}`);
+      throw new Error(
+        `Failed to submit proof to AggLayer. ` +
+        `Please verify AGGLAYER_ENDPOINT and AGGLAYER_API_KEY environment variables.`
+      );
     }
   } catch (error) {
     logger.error(`Failed to submit proof for chain ${chainId}:`, error);
@@ -279,14 +276,9 @@ async function getAggregatedProofs(chainId, limit = 10) {
     
     return response.data.proofs || [];
   } catch (error) {
-    logger.warn(`Failed to get aggregated proofs: ${error.message}`);
-    // Return simulated data for MVP
-    return Array.from({ length: limit }, (_, i) => ({
-      proofId: `proof-${chainId}-${i}`,
-      blockNumber: 1000 + i,
-      status: 'aggregated',
-      timestamp: new Date(Date.now() - i * 60000).toISOString()
-    }));
+    logger.error(`Failed to get aggregated proofs: ${error.message}`);
+    // Return empty array instead of simulated data
+    return [];
   }
 }
 

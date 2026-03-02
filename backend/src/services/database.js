@@ -12,7 +12,12 @@ const inMemoryStorage = {
   invoices: new Map(),
   payments: new Map(),
   usage: new Map(),
-  notifications: new Map()
+  notifications: new Map(),
+  organizations: new Map(),
+  healthChecks: new Map(),
+  healthIncidents: new Map(),
+  uptimeTracking: new Map(),
+  serviceCredits: new Map()
 };
 
 // Export inMemoryStorage for direct access in development
@@ -23,17 +28,37 @@ if (process.env.NODE_ENV === 'development') {
 class DatabaseService {
   constructor() {
     this.useSupabase = isSupabaseConfigured();
+    
+    // Log detailed configuration status
+    const supabaseUrl = process.env.SUPABASE_URL?.trim();
+    const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY)?.trim();
+    
     if (!this.useSupabase) {
       // Only show warning if Supabase was partially configured
       // If completely empty, assume intentional use of in-memory storage
-      const hasSupabaseVars = process.env.SUPABASE_URL || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+      const hasSupabaseVars = supabaseUrl || supabaseKey;
       if (hasSupabaseVars) {
         console.warn('⚠️  Database Service: Using in-memory storage (data will be lost on restart)');
+        console.warn('⚠️  Supabase URL present:', !!supabaseUrl);
+        console.warn('⚠️  Supabase Key present:', !!supabaseKey);
+        if (!supabaseUrl) {
+          console.warn('⚠️  Missing SUPABASE_URL environment variable');
+        }
+        if (!supabaseKey) {
+          console.warn('⚠️  Missing SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY environment variable');
+        }
       } else {
         console.log('📝 Database Service: Using in-memory storage (Supabase not configured)');
+        console.log('💡 To use Supabase, set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in backend/.env');
       }
     } else {
       console.log('✅ Database Service: Using Supabase');
+      console.log('📋 Supabase URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : 'not set');
+      // Test connection
+      const { testSupabaseConnection } = require('../config/supabase');
+      testSupabaseConnection().catch(err => {
+        console.error('❌ Supabase connection test failed:', err.message);
+      });
     }
   }
 
@@ -132,19 +157,43 @@ class DatabaseService {
 
   async createChain(chainData) {
     try {
+      // Ensure user_id is set correctly
+      if (!chainData.user_id && chainData.userId) {
+        chainData.user_id = chainData.userId;
+      }
+      if (!chainData.userId && chainData.user_id) {
+        chainData.userId = chainData.user_id;
+      }
+      
+      console.log('💾 Creating chain with data:', {
+        id: chainData.id,
+        name: chainData.name,
+        user_id: chainData.user_id,
+        userId: chainData.userId
+      });
+      
       if (this.useSupabase) {
+        // Prepare data for Supabase (remove userId if it's not a column)
+        const supabaseData = { ...chainData };
+        // Keep both user_id and userId for compatibility
+        if (!supabaseData.user_id && supabaseData.userId) {
+          supabaseData.user_id = supabaseData.userId;
+        }
+        
         const { data, error } = await supabase
           .from('chains')
-          .insert([chainData])
+          .insert([supabaseData])
           .select()
           .single();
         
         if (error) {
           console.error('Error creating chain in Supabase:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
           throw error;
         }
         
         console.log('✅ Chain created in Supabase:', data.id, 'for user:', data.user_id);
+        console.log('📋 Created chain data:', JSON.stringify(data, null, 2));
         
         // Create initial event
         try {
@@ -166,7 +215,10 @@ class DatabaseService {
           id,
           // Ensure created_at and updated_at are set
           created_at: chainData.created_at || new Date().toISOString(),
-          updated_at: chainData.updated_at || new Date().toISOString()
+          updated_at: chainData.updated_at || new Date().toISOString(),
+          // Ensure both user_id and userId are set for compatibility
+          user_id: chainData.user_id || chainData.userId,
+          userId: chainData.userId || chainData.user_id
         };
         
         // Store in memory
@@ -181,11 +233,13 @@ class DatabaseService {
         console.log('✅ Chain created in memory storage:', id, 'for user:', chain.user_id);
         console.log('📊 Total chains in storage:', inMemoryStorage.chains.size);
         console.log('🔍 Verifying storage - chain exists:', !!stored);
+        console.log('📋 Stored chain data:', JSON.stringify(stored, null, 2));
         
         return chain;
       }
     } catch (error) {
       console.error('❌ Error in createChain:', error);
+      console.error('❌ Error stack:', error.stack);
       throw error;
     }
   }
@@ -193,13 +247,27 @@ class DatabaseService {
   async getChainById(id) {
     try {
       if (this.useSupabase) {
+        console.log(`🔍 getChainById (Supabase): Looking for chain ID: ${id}`);
         const { data, error } = await supabase
           .from('chains')
           .select('*')
           .eq('id', id)
+          .is('deleted_at', null)
           .single();
         
-        if (error && error.code !== 'PGRST116') throw error;
+        if (error) {
+          if (error.code === 'PGRST116') {
+            // Not found - this is expected for non-existent chains
+            console.log(`⚠️ Chain not found in Supabase: ${id}`);
+            return null;
+          }
+          console.error('Error fetching chain from Supabase:', error);
+          throw error;
+        }
+        
+        if (data) {
+          console.log(`✅ Chain found in Supabase: ${data.id} for user: ${data.user_id}`);
+        }
         return data;
       } else {
         // First try direct lookup
@@ -674,6 +742,39 @@ class DatabaseService {
     }
   }
 
+  async getChainUpgradeById(upgradeId) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('chain_upgrades')
+        .select('*')
+        .eq('id', upgradeId)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } else {
+      return inMemoryStorage.chainUpgrades.get(upgradeId) ||
+        Array.from(inMemoryStorage.chainUpgrades.values()).find(u => u.id === upgradeId) ||
+        null;
+    }
+  }
+
+  /**
+   * Get the latest completed upgrade for a chain that is eligible for auto-rollback
+   * (completed within withinMinutes, has auto_rollback_on_failure true, not already rolled back)
+   */
+  async getLatestCompletedUpgradeForAutoRollback(chainId, withinMinutes = 24 * 60) {
+    const upgrades = await this.getChainUpgrades(chainId);
+    const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000);
+    const eligible = upgrades.filter(u =>
+      u.status === 'completed' &&
+      u.auto_rollback_on_failure === true &&
+      u.rollback_available !== false &&
+      new Date(u.completed_at || u.created_at) >= cutoff
+    );
+    return eligible.length > 0 ? eligible[0] : null;
+  }
+
   async updateChainUpgrade(id, updates) {
     if (this.useSupabase) {
       const { data, error } = await supabase
@@ -969,6 +1070,138 @@ class DatabaseService {
     }
   }
 
+  // ============================================================================
+  // SERVICE CREDITS (partner appchains - offset operational costs)
+  // ============================================================================
+
+  async getServiceCreditsBalance(userId, organizationId = null) {
+    if (this.useSupabase) {
+      let query = supabase.from('service_credits').select('*');
+      if (organizationId) {
+        query = query.eq('organization_id', organizationId);
+      } else {
+        query = query.eq('user_id', userId).is('organization_id', null);
+      }
+      const { data, error } = await query.single();
+      if (error && error.code !== 'PGRST116') throw error;
+      return data ? parseFloat(data.balance) : 0;
+    } else {
+      const key = organizationId ? `org:${organizationId}` : userId;
+      const row = inMemoryStorage.serviceCredits.get(key);
+      return row ? parseFloat(row.balance) : 0;
+    }
+  }
+
+  async getServiceCreditsRecord(userId, organizationId = null) {
+    if (this.useSupabase) {
+      let query = supabase.from('service_credits').select('*');
+      if (organizationId) {
+        query = query.eq('organization_id', organizationId);
+      } else {
+        query = query.eq('user_id', userId).is('organization_id', null);
+      }
+      const { data, error } = await query.single();
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    } else {
+      const key = organizationId ? `org:${organizationId}` : userId;
+      return inMemoryStorage.serviceCredits.get(key) || null;
+    }
+  }
+
+  async addServiceCredits(userId, amount, reason = 'partner_onboarding', organizationId = null, isPartnerAppchain = false) {
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt <= 0) throw new Error('Invalid amount');
+
+    if (this.useSupabase) {
+      const existing = await this.getServiceCreditsRecord(userId, organizationId);
+      const newBalance = (existing ? parseFloat(existing.balance) : 0) + amt;
+      const row = {
+        user_id: organizationId ? null : userId,
+        organization_id: organizationId || null,
+        balance: newBalance,
+        is_partner_appchain: isPartnerAppchain,
+        updated_at: new Date().toISOString()
+      };
+      if (existing) {
+        const { data, error } = await supabase
+          .from('service_credits')
+          .update(row)
+          .eq('id', existing.id)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } else {
+        const { data, error } = await supabase
+          .from('service_credits')
+          .insert([{ ...row }])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      }
+    } else {
+      const key = organizationId ? `org:${organizationId}` : userId;
+      const row = inMemoryStorage.serviceCredits.get(key) || {
+        balance: 0,
+        isPartnerAppchain: false
+      };
+      row.balance = (parseFloat(row.balance) || 0) + amt;
+      row.isPartnerAppchain = isPartnerAppchain || row.isPartnerAppchain;
+      inMemoryStorage.serviceCredits.set(key, row);
+      return row;
+    }
+  }
+
+  async applyServiceCreditsToInvoice(invoiceId, amount, userId) {
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt < 0) throw new Error('Invalid amount');
+
+    const invoice = await this.getInvoiceById(invoiceId);
+    if (!invoice) throw new Error('Invoice not found');
+    const invoiceUserId = invoice.user_id || invoice.userId;
+    if (invoiceUserId !== userId) throw new Error('Unauthorized');
+
+    const balance = await this.getServiceCreditsBalance(userId);
+    const amountDue = parseFloat(invoice.amount_due ?? invoice.amountDue ?? invoice.total ?? 0);
+    const toApply = Math.min(amt, balance, amountDue);
+    if (toApply <= 0) throw new Error('No credits to apply or invoice already covered');
+
+    if (this.useSupabase) {
+      const record = await this.getServiceCreditsRecord(userId);
+      if (!record) throw new Error('No service credits record');
+      await supabase
+        .from('service_credits')
+        .update({
+          balance: parseFloat(record.balance) - toApply,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', record.id);
+
+      await supabase
+        .from('invoices')
+        .update({
+          service_credits_applied: (parseFloat(invoice.service_credits_applied) || 0) + toApply,
+          amount_due: amountDue - toApply,
+          amount_paid: (parseFloat(invoice.amount_paid) || 0) + toApply,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', invoiceId);
+    } else {
+      const key = userId;
+      const row = inMemoryStorage.serviceCredits.get(key);
+      if (row) row.balance = Math.max(0, (parseFloat(row.balance) || 0) - toApply);
+      const inv = inMemoryStorage.invoices.get(invoiceId);
+      if (inv) {
+        inv.service_credits_applied = (parseFloat(inv.service_credits_applied) || 0) + toApply;
+        inv.amount_due = (parseFloat(inv.amount_due) || inv.amountDue || 0) - toApply;
+        inv.amount_paid = (parseFloat(inv.amount_paid) || 0) + toApply;
+      }
+    }
+    return { applied: toApply, newAmountDue: amountDue - toApply };
+  }
+
   async getUserPaymentHistory(userId) {
     if (this.useSupabase) {
       const { data, error } = await supabase
@@ -1183,6 +1416,595 @@ class DatabaseService {
         return { success: true };
       }
       throw new Error('Notification not found');
+    }
+  }
+
+  // ============================================================================
+  // ORGANIZATIONS & WHITE-LABEL
+  // ============================================================================
+
+  async createOrganization(orgData) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('organizations')
+        .insert([orgData])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.organizations) {
+        inMemoryStorage.organizations = new Map();
+      }
+      const id = orgData.id || require('uuid').v4();
+      const org = {
+        ...orgData,
+        id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      inMemoryStorage.organizations.set(id, org);
+      return org;
+    }
+  }
+
+  async getOrganizationById(orgId) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('id', orgId)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.organizations) {
+        inMemoryStorage.organizations = new Map();
+      }
+      return inMemoryStorage.organizations.get(orgId);
+    }
+  }
+
+  async getOrganizationByDomain(domain) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('custom_domain', domain)
+        .eq('is_active', true)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.organizations) {
+        inMemoryStorage.organizations = new Map();
+      }
+      return Array.from(inMemoryStorage.organizations.values())
+        .find(org => org.custom_domain === domain && org.is_active !== false);
+    }
+  }
+
+  async getUserOrganizations(userId) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('*')
+        .or(`owner_id.eq.${userId},members.cs.{${userId}}`)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    } else {
+      if (!inMemoryStorage.organizations) {
+        inMemoryStorage.organizations = new Map();
+      }
+      return Array.from(inMemoryStorage.organizations.values())
+        .filter(org => org.owner_id === userId || (org.members && org.members.includes(userId)));
+    }
+  }
+
+  async updateOrganization(orgId, updates) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('organizations')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', orgId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.organizations) {
+        inMemoryStorage.organizations = new Map();
+      }
+      const org = inMemoryStorage.organizations.get(orgId);
+      if (org) {
+        const updated = { ...org, ...updates, updated_at: new Date().toISOString() };
+        inMemoryStorage.organizations.set(orgId, updated);
+        return updated;
+      }
+      return null;
+    }
+  }
+
+  async getWhiteLabelSettings(orgId) {
+    const org = await this.getOrganizationById(orgId);
+    if (!org) return null;
+
+    return {
+      branding: {
+        logo: org.logo_url || null,
+        favicon: org.favicon_url || null,
+        companyName: org.name || null,
+        supportEmail: org.support_email || null,
+      },
+      colors: {
+        primary: org.primary_color || '#a855f7',
+        secondary: org.secondary_color || '#ec4899',
+        accent: org.accent_color || '#06b6d4',
+        background: org.background_color || '#030014',
+      },
+      domain: org.custom_domain || null,
+      termsOfService: org.terms_of_service_url || null,
+      customCss: org.custom_css || null,
+    };
+  }
+
+  // ============================================================================
+  // HEALTH MONITORING
+  // ============================================================================
+
+  async createHealthCheck(chainId, healthData) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('chain_health_checks')
+        .insert([{
+          chain_id: chainId,
+          status: healthData.status,
+          health_score: healthData.score,
+          rpc_status: healthData.checks?.rpc?.status,
+          rpc_response_time_ms: healthData.checks?.rpc?.responseTime,
+          rpc_block_number: healthData.checks?.rpc?.blockNumber,
+          block_production_status: healthData.checks?.blocks?.status,
+          current_block: healthData.checks?.blocks?.currentBlock,
+          block_time_seconds: healthData.checks?.blocks?.blockTime,
+          validator_status: healthData.checks?.validators?.status,
+          total_validators: healthData.checks?.validators?.total,
+          active_validators: healthData.checks?.validators?.active,
+          performance_status: healthData.checks?.performance?.status,
+          tps: healthData.checks?.performance?.tps,
+          network_status: healthData.checks?.network?.status,
+          issues: healthData.issues || [],
+          severity: healthData.severity || 'info'
+        }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } else {
+      // In-memory storage for health checks
+      if (!inMemoryStorage.healthChecks) {
+        inMemoryStorage.healthChecks = new Map();
+      }
+      const id = require('uuid').v4();
+      const check = {
+        id,
+        chain_id: chainId,
+        ...healthData,
+        checked_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+      inMemoryStorage.healthChecks.set(id, check);
+      return check;
+    }
+  }
+
+  async getHealthChecks(chainId, limit = 100) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('chain_health_checks')
+        .select('*')
+        .eq('chain_id', chainId)
+        .order('checked_at', { ascending: false })
+        .limit(limit);
+      
+      if (error) throw error;
+      return data || [];
+    } else {
+      if (!inMemoryStorage.healthChecks) {
+        return [];
+      }
+      return Array.from(inMemoryStorage.healthChecks.values())
+        .filter(h => h.chain_id === chainId)
+        .sort((a, b) => new Date(b.checked_at) - new Date(a.checked_at))
+        .slice(0, limit);
+    }
+  }
+
+  async createHealthIncident(chainId, incidentData) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('chain_health_incidents')
+        .insert([{
+          chain_id: chainId,
+          type: incidentData.type,
+          severity: incidentData.severity,
+          status: incidentData.status || 'open',
+          title: incidentData.title || incidentData.description,
+          description: incidentData.description,
+          health_data: incidentData.healthData || {},
+          recovery_actions: incidentData.recoveryActions || []
+        }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } else {
+      // In-memory storage
+      if (!inMemoryStorage.healthIncidents) {
+        inMemoryStorage.healthIncidents = new Map();
+      }
+      const id = incidentData.id || require('uuid').v4();
+      const incident = {
+        id,
+        chain_id: chainId,
+        ...incidentData,
+        detected_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+      inMemoryStorage.healthIncidents.set(id, incident);
+      return incident;
+    }
+  }
+
+  async getHealthIncidents(chainId, options = {}) {
+    const { limit = 50, status, severity } = options;
+    
+    if (this.useSupabase) {
+      let query = supabase
+        .from('chain_health_incidents')
+        .select('*')
+        .eq('chain_id', chainId)
+        .order('detected_at', { ascending: false })
+        .limit(limit);
+      
+      if (status) {
+        query = query.eq('status', status);
+      }
+      if (severity) {
+        query = query.eq('severity', severity);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    } else {
+      if (!inMemoryStorage.healthIncidents) {
+        return [];
+      }
+      let incidents = Array.from(inMemoryStorage.healthIncidents.values())
+        .filter(i => i.chain_id === chainId);
+      
+      if (status) {
+        incidents = incidents.filter(i => i.status === status);
+      }
+      if (severity) {
+        incidents = incidents.filter(i => i.severity === severity);
+      }
+      
+      return incidents
+        .sort((a, b) => new Date(b.detected_at) - new Date(a.detected_at))
+        .slice(0, limit);
+    }
+  }
+
+  async updateUptimeTracking(chainId, uptimeData) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('chain_uptime_tracking')
+        .upsert([{
+          chain_id: chainId,
+          total_uptime_seconds: uptimeData.totalUptime,
+          total_downtime_seconds: uptimeData.totalDowntime,
+          uptime_percentage: uptimeData.uptimePercentage,
+          current_status: uptimeData.lastStatus,
+          last_status_change: uptimeData.statusChanges?.[uptimeData.statusChanges.length - 1]?.timestamp,
+          total_status_changes: uptimeData.statusChanges?.length || 0,
+          updated_at: new Date().toISOString()
+        }], {
+          onConflict: 'chain_id'
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } else {
+      // In-memory storage
+      if (!inMemoryStorage.uptimeTracking) {
+        inMemoryStorage.uptimeTracking = new Map();
+      }
+      const tracking = {
+        chain_id: chainId,
+        ...uptimeData,
+        updated_at: new Date().toISOString()
+      };
+      inMemoryStorage.uptimeTracking.set(chainId, tracking);
+      return tracking;
+    }
+  }
+
+  async getUptimeTracking(chainId) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('chain_uptime_tracking')
+        .select('*')
+        .eq('chain_id', chainId)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.uptimeTracking) {
+        return null;
+      }
+      return inMemoryStorage.uptimeTracking.get(chainId) || null;
+    }
+  }
+}
+
+  // ============================================================================
+  // BRIDGE TRANSACTIONS
+  // ============================================================================
+
+  async createBridgeTransaction(data) {
+    if (this.useSupabase) {
+      const { data: row, error } = await supabase
+        .from('bridge_transactions')
+        .insert([data])
+        .select()
+        .single();
+      if (error) throw error;
+      return row;
+    } else {
+      const id = data.id || require('uuid').v4();
+      const tx = { ...data, id, created_at: data.created_at || new Date().toISOString() };
+      if (!inMemoryStorage.bridgeTransactions) inMemoryStorage.bridgeTransactions = new Map();
+      inMemoryStorage.bridgeTransactions.set(id, tx);
+      return tx;
+    }
+  }
+
+  async getBridgeTransactions(userId, { chainId, status, limit = 50, offset = 0 } = {}) {
+    if (this.useSupabase) {
+      let query = supabase
+        .from('bridge_transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      if (chainId) query = query.or(`source_chain_id.eq.${chainId},destination_chain_id.eq.${chainId}`);
+      if (status) query = query.eq('status', status);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    } else {
+      if (!inMemoryStorage.bridgeTransactions) return [];
+      let txs = Array.from(inMemoryStorage.bridgeTransactions.values())
+        .filter(tx => tx.user_id === userId);
+      if (chainId) txs = txs.filter(tx => tx.source_chain_id === chainId || tx.destination_chain_id === chainId);
+      if (status) txs = txs.filter(tx => tx.status === status);
+      txs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      return txs.slice(offset, offset + limit);
+    }
+  }
+
+  async updateBridgeTransaction(id, updates) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('bridge_transactions')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.bridgeTransactions) return null;
+      const existing = inMemoryStorage.bridgeTransactions.get(id);
+      if (!existing) return null;
+      const updated = { ...existing, ...updates };
+      inMemoryStorage.bridgeTransactions.set(id, updated);
+      return updated;
+    }
+  }
+
+  // ============================================================================
+  // API KEYS
+  // ============================================================================
+
+  async createApiKey(data) {
+    if (this.useSupabase) {
+      const { data: row, error } = await supabase
+        .from('api_keys')
+        .insert([data])
+        .select()
+        .single();
+      if (error) throw error;
+      return row;
+    } else {
+      const id = data.id || require('uuid').v4();
+      const key = { ...data, id, created_at: new Date().toISOString() };
+      if (!inMemoryStorage.apiKeys) inMemoryStorage.apiKeys = new Map();
+      inMemoryStorage.apiKeys.set(id, key);
+      return key;
+    }
+  }
+
+  async getApiKeysByUser(userId) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('api_keys')
+        .select('id, name, key_prefix, scopes, is_active, last_used_at, created_at, expires_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } else {
+      if (!inMemoryStorage.apiKeys) return [];
+      return Array.from(inMemoryStorage.apiKeys.values())
+        .filter(k => k.user_id === userId)
+        .map(({ key_hash, ...rest }) => rest); // don't expose hash
+    }
+  }
+
+  async getApiKeyByHash(keyHash) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('api_keys')
+        .select('*')
+        .eq('key_hash', keyHash)
+        .eq('is_active', true)
+        .single();
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.apiKeys) return null;
+      return Array.from(inMemoryStorage.apiKeys.values())
+        .find(k => k.key_hash === keyHash && k.is_active);
+    }
+  }
+
+  async revokeApiKey(id, userId) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('api_keys')
+        .update({ is_active: false, revoked_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('user_id', userId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.apiKeys) return null;
+      const key = inMemoryStorage.apiKeys.get(id);
+      if (!key || key.user_id !== userId) return null;
+      key.is_active = false;
+      key.revoked_at = new Date().toISOString();
+      return key;
+    }
+  }
+
+  // ============================================================================
+  // WEBHOOKS
+  // ============================================================================
+
+  async createWebhook(data) {
+    if (this.useSupabase) {
+      const { data: row, error } = await supabase
+        .from('webhooks')
+        .insert([data])
+        .select()
+        .single();
+      if (error) throw error;
+      return row;
+    } else {
+      const id = data.id || require('uuid').v4();
+      const wh = { ...data, id, created_at: new Date().toISOString() };
+      if (!inMemoryStorage.webhooks) inMemoryStorage.webhooks = new Map();
+      inMemoryStorage.webhooks.set(id, wh);
+      return wh;
+    }
+  }
+
+  async getWebhooksByUser(userId) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('webhooks')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } else {
+      if (!inMemoryStorage.webhooks) return [];
+      return Array.from(inMemoryStorage.webhooks.values()).filter(w => w.user_id === userId);
+    }
+  }
+
+  async getWebhookById(id) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('webhooks')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.webhooks) return null;
+      return inMemoryStorage.webhooks.get(id) || null;
+    }
+  }
+
+  async updateWebhook(id, updates) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('webhooks')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } else {
+      if (!inMemoryStorage.webhooks) return null;
+      const existing = inMemoryStorage.webhooks.get(id);
+      if (!existing) return null;
+      const updated = { ...existing, ...updates, updated_at: new Date().toISOString() };
+      inMemoryStorage.webhooks.set(id, updated);
+      return updated;
+    }
+  }
+
+  async deleteWebhook(id, userId) {
+    if (this.useSupabase) {
+      const { error } = await supabase
+        .from('webhooks')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
+      if (error) throw error;
+      return true;
+    } else {
+      if (!inMemoryStorage.webhooks) return false;
+      const wh = inMemoryStorage.webhooks.get(id);
+      if (!wh || wh.user_id !== userId) return false;
+      inMemoryStorage.webhooks.delete(id);
+      return true;
+    }
+  }
+
+  async getActiveWebhooksForEvent(eventType) {
+    if (this.useSupabase) {
+      const { data, error } = await supabase
+        .from('webhooks')
+        .select('*')
+        .eq('is_active', true)
+        .contains('events', [eventType]);
+      if (error) throw error;
+      return data || [];
+    } else {
+      if (!inMemoryStorage.webhooks) return [];
+      return Array.from(inMemoryStorage.webhooks.values())
+        .filter(w => w.is_active && w.events && w.events.includes(eventType));
     }
   }
 }

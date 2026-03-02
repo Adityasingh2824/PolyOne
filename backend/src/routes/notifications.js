@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../services/database');
+const getWsService = require('../middleware/getWsService');
 
 // Middleware to verify JWT (optional for development)
 const authenticate = (req, res, next) => {
@@ -69,6 +70,17 @@ router.post('/', authenticate, async (req, res) => {
     };
 
     const notification = await db.createNotification(notificationData);
+    
+    // Notify via WebSocket
+    try {
+      const wsService = getWsService(req);
+      if (wsService) {
+        wsService.notifyNotification(notificationData.user_id || userId, notification);
+      }
+    } catch (wsError) {
+      console.warn('WebSocket notification failed:', wsError);
+    }
+    
     res.status(201).json(notification);
   } catch (error) {
     console.error('Error creating notification:', error);
@@ -121,5 +133,30 @@ router.delete('/:id', authenticate, async (req, res) => {
 });
 
 module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

@@ -28,8 +28,8 @@ async function deployChain(chainId, config) {
   logger.info(`Starting deployment for chain ${chainId}`);
   
   try {
-    // Step 1: Initialize Polygon CDK chain configuration
-    logger.info(`Initializing Polygon CDK for ${config.name}`);
+    // Step 1: Initialize Polygon CDK chain configuration (REAL INTEGRATION)
+    logger.info(`Initializing Polygon CDK for ${config.name} (using real integration)`);
     const cdkResult = await initializeCDKChain(chainId, {
       name: config.name,
       rollupType: config.rollupType,
@@ -38,38 +38,53 @@ async function deployChain(chainId, config) {
       validatorAccess: config.validatorAccess || 'public',
       validators: config.validators || 3,
       blockTime: config.blockTime || 2,
-      gasLimit: config.gasLimit || '0x1312D00'
+      gasLimit: config.gasLimit || '0x1312D00',
+      chainId: config.chainId, // Pass through if provided
+      network: config.network || (process.env.POLYGON_NETWORK === 'mainnet' ? 'mainnet' : 'testnet')
     });
     
-    // Step 2: Deploy Polygon CDK nodes using Docker
-    logger.info(`Deploying Polygon CDK nodes with Docker`);
+    // Step 2: Deploy Polygon CDK nodes (REAL DEPLOYMENT - CLI or Docker)
+    logger.info(`Deploying Polygon CDK nodes (method: auto)`);
     const deploymentResult = await deployCDKNodes(chainId, cdkResult.config);
     
     if (!deploymentResult.success) {
-      throw new Error('Failed to deploy CDK nodes');
+      throw new Error(`Failed to deploy CDK nodes: ${deploymentResult.error || 'Unknown error'}`);
     }
     
-    // Step 3: Register chain with AggLayer
-    logger.info(`Registering chain with AggLayer`);
-    const agglayerResult = await registerChainWithAggLayer(chainId, {
-      name: config.name,
-      rollupType: config.rollupType,
-      rpcUrl: `http://localhost:8545`,
-      explorerUrl: `https://explorer-${chainId.substring(0, 8)}.polyone.io`,
-      bridgeAddress: '0x...', // Will be set after bridge deployment
-      zkEVMAddress: '0x...',
-      chainId: cdkResult.config.chainId
-    });
+    logger.info(`CDK nodes deployed successfully using ${deploymentResult.method} method`);
     
-    // Step 4: Setup Polygon PoS bridge
+    // Step 3: Setup Polygon PoS bridge first (needed for AggLayer registration)
     logger.info(`Setting up Polygon PoS bridge`);
     const bridgeResult = await setupPolygonBridge(chainId, {
       name: config.name,
       chainId: cdkResult.config.chainId,
-      rpcUrl: `http://localhost:8545`,
+      rpcUrl: deploymentResult.nodes?.[0]?.ports ? 
+        `http://localhost:${deploymentResult.nodes[0].ports.split(':')[0]}` : 
+        `http://localhost:8545`,
       gasToken: config.gasToken,
-      bridgeAddress: '0x...'
+      bridgeAddress: '0x...' // Will be set after bridge contract deployment
     });
+    
+    // Step 4: Register chain with AggLayer (REAL INTEGRATION)
+    logger.info(`Registering chain with AggLayer (real integration)`);
+    const agglayerResult = await registerChainWithAggLayer(chainId, {
+      name: config.name,
+      rollupType: config.rollupType,
+      rpcUrl: deploymentResult.nodes?.[0]?.ports ? 
+        `http://localhost:${deploymentResult.nodes[0].ports.split(':')[0]}` : 
+        `http://localhost:8545`,
+      explorerUrl: `https://explorer-${chainId.substring(0, 8)}.polyone.io`,
+      bridgeAddress: bridgeResult?.bridgeConfig?.bridgeAddress || '0x...',
+      zkEVMAddress: cdkResult.config.zkEVMConfig?.zkEVMAddress || '0x...',
+      chainId: cdkResult.config.chainId
+    });
+    
+    if (!agglayerResult.success) {
+      logger.warn(`AggLayer registration failed: ${agglayerResult.error || 'Unknown error'}`);
+      // Continue deployment but log warning
+    } else {
+      logger.info(`Chain registered with AggLayer (method: ${agglayerResult.method})`);
+    }
     
     // Step 5: Initialize monitoring
     logger.info(`Initializing monitoring services`);

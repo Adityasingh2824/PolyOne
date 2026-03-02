@@ -137,13 +137,40 @@ contract ChainFactory {
 
     /**
      * @dev Get chain details
+     * Returns chain struct with all information
      */
     function getChain(uint256 _chainId) 
         external 
         view 
-        returns (Chain memory) 
+        returns (
+            uint256 id,
+            address owner,
+            string memory name,
+            string memory chainType,
+            string memory rollupType,
+            string memory gasToken,
+            uint256 validators,
+            uint256 createdAt,
+            bool isActive,
+            string memory rpcUrl,
+            string memory explorerUrl
+        ) 
     {
-        return chains[_chainId];
+        Chain memory chain = chains[_chainId];
+        require(chain.id != 0, "Chain does not exist");
+        return (
+            chain.id,
+            chain.owner,
+            chain.name,
+            chain.chainType,
+            chain.rollupType,
+            chain.gasToken,
+            chain.validators,
+            chain.createdAt,
+            chain.isActive,
+            chain.rpcUrl,
+            chain.explorerUrl
+        );
     }
 
     /**

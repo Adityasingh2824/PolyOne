@@ -19,14 +19,23 @@ const authenticate = (req, res, next) => {
   }
 };
 
-// Get bridge transaction history
+// Get bridge transaction history (from DB)
 router.get('/transactions', authenticate, async (req, res) => {
   try {
     const { chainId, status, limit = 50, offset = 0 } = req.query;
     
-    // In a real implementation, this would query the bridge_transactions table
-    // For now, return mock data structure
-    const transactions = [];
+    // Query bridge transactions from database
+    let transactions = [];
+    try {
+      transactions = await db.getBridgeTransactions(req.userId, {
+        chainId,
+        status,
+        limit: parseInt(limit),
+        offset: parseInt(offset)
+      }) || [];
+    } catch (dbError) {
+      console.warn('DB bridge query failed, returning empty:', dbError.message);
+    }
     
     res.json({
       transactions,
@@ -70,28 +79,41 @@ router.post('/transaction', authenticate, [
       return res.status(403).json({ message: 'Access denied to source chain' });
     }
 
-    // Create bridge transaction
+    // Look up destination chain for network ID
+    let destNetworkId = 0;
+    try {
+      const destChain = await db.getChainById(destination_chain_id);
+      destNetworkId = destChain?.chain_id || 0;
+    } catch { /* ignore */ }
+
+    // Create bridge transaction record
     const transactionData = {
+      id: require('uuid').v4(),
       user_id: req.userId,
       source_chain_id,
       destination_chain_id,
       source_chain_network_id: sourceChain.chain_id || 0,
-      destination_chain_network_id: 0, // Would be fetched from destination chain
+      destination_chain_network_id: destNetworkId,
       tx_type,
       status: 'pending',
       token_address,
       amount: amount.toString(),
       amount_formatted: amount,
-      sender_address: req.userId, // In production, get from wallet
+      sender_address: req.body.sender_address || req.userId,
       recipient_address,
       created_at: new Date().toISOString()
     };
 
-    // In production, this would save to bridge_transactions table
-    const transaction = {
-      id: require('uuid').v4(),
-      ...transactionData
-    };
+    // Persist to database
+    let transaction = transactionData;
+    try {
+      transaction = await db.createBridgeTransaction(transactionData) || transactionData;
+    } catch (dbError) {
+      console.warn('Failed to persist bridge transaction to DB:', dbError.message);
+    }
+
+    // TODO: Initiate actual bridge deposit/withdrawal via polygonBridge service here
+    // const bridgeResult = await polygonBridge.initiateBridgeTransfer(transaction);
 
     res.status(201).json({
       message: 'Bridge transaction initiated',
@@ -197,6 +219,130 @@ router.get('/security/:chainId', authenticate, async (req, res) => {
   }
 });
 
+// ========== L2 Bridge Adapters (Arbitrum, Optimism, Base, Polygon) ==========
+const l2Adapters = require('../services/l2BridgeAdapters');
+
+// List available L2 adapters
+router.get('/l2/adapters', authenticate, (req, res) => {
+  try {
+    const adapters = l2Adapters.getL2Adapters();
+    res.json({ adapters });
+  } catch (error) {
+    console.error('Error listing L2 adapters:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get bridge status for appchain <-> L2
+router.get('/l2/status', authenticate, async (req, res) => {
+  try {
+    const { chainId, l2 } = req.query;
+    if (!chainId || !l2) {
+      return res.status(400).json({ message: 'chainId and l2 are required (l2: polygon, arbitrum, optimism, base)' });
+    }
+    const chain = await db.getChainById(chainId);
+    if (!chain || chain.user_id !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    const status = await l2Adapters.getL2BridgeStatus(chainId, l2);
+    res.json(status);
+  } catch (error) {
+    console.error('Error fetching L2 bridge status:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Setup bridge config for appchain to L2
+router.post('/l2/setup', authenticate, [
+  body('chain_id').notEmpty().withMessage('Chain ID is required'),
+  body('l2').isIn(['polygon', 'arbitrum', 'optimism', 'base']).withMessage('l2 must be polygon, arbitrum, optimism, or base')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+    const { chain_id, l2 } = req.body;
+    const chain = await db.getChainById(chain_id);
+    if (!chain || chain.user_id !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    const chainConfig = {
+      chainId: chain.chain_id,
+      rpcUrl: chain.rpc_url,
+      name: chain.name,
+      bridgeAddress: chain.bridge_address || '0x...',
+      gasToken: chain.gas_token
+    };
+    const result = await l2Adapters.setupL2Bridge(chain_id, chainConfig, l2);
+    res.json(result);
+  } catch (error) {
+    console.error('Error setting up L2 bridge:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Initiate bridge transfer to L2
+router.post('/l2/transfer', authenticate, [
+  body('chain_id').notEmpty().withMessage('Chain ID is required'),
+  body('l2').isIn(['polygon', 'arbitrum', 'optimism', 'base']).withMessage('l2 must be polygon, arbitrum, optimism, or base'),
+  body('amount').isFloat({ min: 0.000001 }).withMessage('Amount must be greater than 0'),
+  body('recipient').notEmpty().withMessage('Recipient address is required'),
+  body('token').optional(),
+  body('private_key').optional()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
+    const { chain_id, l2, amount, recipient, token, private_key } = req.body;
+    const chain = await db.getChainById(chain_id);
+    if (!chain || chain.user_id !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    const transferData = {
+      amount: String(amount),
+      token: token || 'ETH',
+      recipient,
+      privateKey: private_key || process.env.BRIDGE_RELAYER_PRIVATE_KEY
+    };
+    if (!transferData.privateKey) {
+      return res.status(400).json({ message: 'private_key or BRIDGE_RELAYER_PRIVATE_KEY required for transfer' });
+    }
+    const result = await l2Adapters.bridgeToL2(chain_id, l2, transferData);
+    res.json(result);
+  } catch (error) {
+    console.error('Error bridging to L2:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

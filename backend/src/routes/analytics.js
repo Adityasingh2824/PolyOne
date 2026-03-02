@@ -155,6 +155,118 @@ router.get('/performance/:chainId', authenticate, async (req, res) => {
   }
 });
 
+// ============================================================================
+// Alias routes: match frontend paths /chains/:chainId, /chains/:chainId/transactions, /chains/:chainId/gas
+// ============================================================================
+
+// Chain summary analytics (aggregates transaction + performance for one chain)
+router.get('/chains/:chainId', authenticate, async (req, res) => {
+  try {
+    const { chainId } = req.params;
+    const { period = 'daily' } = req.query;
+
+    const chain = await db.getChainById(chainId);
+    if (!chain || chain.user_id !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const summary = {
+      chainId,
+      period,
+      transactions: {
+        total: chain.transactions || 0,
+        successful: chain.transactions || 0,
+        failed: 0,
+        pending: 0
+      },
+      performance: {
+        tps: chain.tps || 0,
+        uptime: chain.uptime || 100,
+        blocks_produced: chain.total_blocks || 0,
+        avg_block_time_ms: chain.avg_block_time || 0,
+        storage_used_gb: chain.storage_used_gb || 0,
+        bandwidth_used_gb: chain.bandwidth_used_gb || 0
+      },
+      gas: {
+        total_gas_used: 0,
+        avg_gas_price: 0
+      }
+    };
+
+    res.json({ analytics: summary });
+  } catch (error) {
+    console.error('Error fetching chain analytics summary:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Alias: /chains/:chainId/transactions → same as /transactions/:chainId
+router.get('/chains/:chainId/transactions', authenticate, async (req, res) => {
+  try {
+    const { chainId } = req.params;
+    const { period = 'daily', startDate, endDate } = req.query;
+
+    const chain = await db.getChainById(chainId);
+    if (!chain || chain.user_id !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const analytics = {
+      period,
+      total_transactions: chain.transactions || 0,
+      successful_transactions: chain.transactions || 0,
+      failed_transactions: 0,
+      pending_transactions: 0,
+      total_value_transferred: 0,
+      avg_transaction_value: 0,
+      total_gas_used: 0,
+      avg_gas_used: 0,
+      unique_senders: 0,
+      unique_receivers: 0,
+      contract_deployments: 0,
+      contract_calls: 0
+    };
+
+    res.json({ analytics });
+  } catch (error) {
+    console.error('Error fetching transaction analytics:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Alias: /chains/:chainId/gas → same as /gas/:chainId
+router.get('/chains/:chainId/gas', authenticate, async (req, res) => {
+  try {
+    const { chainId } = req.params;
+    const { period = 'daily' } = req.query;
+
+    const chain = await db.getChainById(chainId);
+    if (!chain || chain.user_id !== req.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const gasAnalytics = {
+      period,
+      avg_gas_price: 0,
+      min_gas_price: 0,
+      max_gas_price: 0,
+      median_gas_price: 0,
+      total_gas_used: 0,
+      avg_gas_limit: 0,
+      gas_utilization_percentage: 0,
+      slow_gas_price: 0,
+      standard_gas_price: 0,
+      fast_gas_price: 0,
+      instant_gas_price: 0
+    };
+
+    res.json({ gasAnalytics });
+  } catch (error) {
+    console.error('Error fetching gas analytics:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Export analytics data
 router.post('/export', authenticate, [
   body('export_type').isIn(['transactions', 'gas_analytics', 'performance', 'user_activity', 'full_report']).withMessage('Invalid export type'),
@@ -208,5 +320,30 @@ router.post('/export', authenticate, [
 });
 
 module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

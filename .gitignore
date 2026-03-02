@@ -47,6 +47,7 @@ yarn-error.log*
 # Test coverage
 coverage/
 .nyc_output/
+*.lcov
 
 # Temporary files
 tmp/

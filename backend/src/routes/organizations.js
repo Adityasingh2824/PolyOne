@@ -33,22 +33,25 @@ router.post('/', authenticate, [
 
     const { name, slug, description } = req.body;
 
-    // In production, this would create organization in database
-    // const organization = await db.createOrganization({
-    //   name,
-    //   slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
-    //   description,
-    //   owner_id: req.userId
-    // });
-
-    const organization = {
+    const organization = await db.createOrganization({
       id: require('uuid').v4(),
       name,
       slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
-      description,
+      description: description || null,
       owner_id: req.userId,
-      created_at: new Date().toISOString()
-    };
+      is_active: true,
+      // Initialize white-label fields
+      logo_url: null,
+      favicon_url: null,
+      support_email: null,
+      primary_color: '#a855f7',
+      secondary_color: '#ec4899',
+      accent_color: '#06b6d4',
+      background_color: '#030014',
+      custom_domain: null,
+      terms_of_service_url: null,
+      custom_css: null,
+    });
 
     res.status(201).json({
       message: 'Organization created successfully',
@@ -63,10 +66,7 @@ router.post('/', authenticate, [
 // Get user's organizations
 router.get('/', authenticate, async (req, res) => {
   try {
-    // In production, this would query organizations table
-    // const organizations = await db.getUserOrganizations(req.userId);
-    const organizations = [];
-
+    const organizations = await db.getUserOrganizations(req.userId);
     res.json({ organizations });
   } catch (error) {
     console.error('Error fetching organizations:', error);
@@ -147,5 +147,30 @@ router.delete('/:orgId/members/:memberId', authenticate, async (req, res) => {
 });
 
 module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

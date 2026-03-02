@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // API configuration
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -26,9 +26,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Unauthorized - clear token and redirect to login
+      const hadToken = !!localStorage.getItem('authToken');
       localStorage.removeItem('authToken');
-      window.location.href = '/login';
+      // Only redirect to login if they were using email auth (had a token)
+      // Wallet-only users have no token; don't force them to login page
+      if (hadToken) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -37,15 +41,17 @@ api.interceptors.response.use(
 // API endpoints
 export const apiClient = {
   // Health check
-  health: () => api.get('/api/health'),
+  healthCheck: () => api.get('/api/health'),
 
   // Authentication
   auth: {
-    signup: (data: { email: string; password: string; username: string }) =>
+    signup: (data: { name: string; email: string; password: string; company?: string }) =>
       api.post('/api/auth/signup', data),
     login: (data: { email: string; password: string }) =>
       api.post('/api/auth/login', data),
     logout: () => api.post('/api/auth/logout'),
+    refreshToken: (refreshToken: string) =>
+      api.post('/api/auth/refresh-token', { refreshToken }),
   },
 
   // Chains
@@ -75,6 +81,11 @@ export const apiClient = {
       api.post(`/api/chains/${id}/restore`, { backupId }),
     upgrade: (id: string, version: string) =>
       api.post(`/api/chains/${id}/upgrade`, { version }),
+    getUpgrades: (id: string) => api.get(`/api/chains/${id}/upgrades`),
+    completeUpgrade: (id: string, upgradeId: string) =>
+      api.post(`/api/chains/${id}/upgrades/${upgradeId}/complete`),
+    rollbackUpgrade: (id: string, upgradeId: string) =>
+      api.post(`/api/chains/${id}/upgrades/${upgradeId}/rollback`),
     scale: (id: string, validatorCount: number) =>
       api.post(`/api/chains/${id}/scale`, { validatorCount }),
   },
@@ -101,6 +112,20 @@ export const apiClient = {
     initiateBridge: (data: any) => api.post('/api/bridge/initiate', data),
     claimBridge: (transactionId: string, proof: string) =>
       api.post('/api/bridge/claim', { transactionId, proof }),
+    getL2Adapters: () => api.get('/api/bridge/l2/adapters'),
+    getL2Status: (chainId: string, l2: string) =>
+      api.get('/api/bridge/l2/status', { params: { chainId, l2 } }),
+    setupL2: (chainId: string, l2: string) =>
+      api.post('/api/bridge/l2/setup', { chain_id: chainId, l2 }),
+    transferToL2: (chainId: string, l2: string, data: { amount: number; recipient: string; token?: string; private_key?: string }) =>
+      api.post('/api/bridge/l2/transfer', { chain_id: chainId, l2, ...data }),
+  },
+
+  // Liquidity (shared liquidity primitives)
+  liquidity: {
+    getPools: () => api.get('/api/liquidity/pools'),
+    getPoolBalance: (tokenAddress: string, destinationChainId: number) =>
+      api.get('/api/liquidity/pools/balance', { params: { token_address: tokenAddress, destination_chain_id: destinationChainId } }),
   },
 
   // Analytics
@@ -122,6 +147,14 @@ export const apiClient = {
     getInvoices: () => api.get('/api/billing/invoices'),
     payInvoice: (invoiceId: string) =>
       api.post(`/api/billing/invoices/${invoiceId}/pay`),
+    getServiceCredits: (organizationId?: string) =>
+      api.get('/api/billing/service-credits', { params: organizationId ? { organization_id: organizationId } : {} }),
+    applyCreditsToInvoice: (invoiceId: string, amount: number) =>
+      api.post(`/api/billing/invoices/${invoiceId}/apply-credits`, { amount }),
+    addServiceCredits: (data: { user_id: string; amount: number; reason?: string; is_partner_appchain?: boolean; organization_id?: string }) =>
+      api.post('/api/billing/service-credits/add', data),
+    checkout: (planId: string, successUrl?: string, cancelUrl?: string) =>
+      api.post('/api/billing/checkout', { planId, successUrl, cancelUrl }),
   },
 
   // Notifications
@@ -156,6 +189,116 @@ export const apiClient = {
       blockchainTxHash?: string;
       blockchainChainId?: number;
     }) => api.post(`/api/templates/${templateId}/deploy`, data),
+  },
+
+  // Health Monitoring
+  health: {
+    getStatus: (chainId: string) => api.get(`/api/health/${chainId}/status`),
+    performCheck: (chainId: string) => api.post(`/api/health/${chainId}/check`),
+    startMonitoring: (chainId: string, config?: any) => api.post(`/api/health/${chainId}/start`, config),
+    stopMonitoring: (chainId: string) => api.post(`/api/health/${chainId}/stop`),
+    getUptime: (chainId: string) => api.get(`/api/health/${chainId}/uptime`),
+    getIncidents: (chainId: string, params?: { limit?: number; status?: string }) => 
+      api.get(`/api/health/${chainId}/incidents`, { params }),
+    getThresholds: (chainId: string) => api.get(`/api/health/${chainId}/thresholds`),
+    updateThresholds: (chainId: string, thresholds: any) => 
+      api.put(`/api/health/${chainId}/thresholds`, { thresholds }),
+    getHistory: (chainId: string, params?: { limit?: number; hours?: number }) => 
+      api.get(`/api/health/${chainId}/history`, { params }),
+  },
+
+  // Contracts
+  contracts: {
+    getTemplates: (params?: { category?: string; search?: string; tag?: string }) =>
+      api.get('/api/contracts/templates', { params }),
+    getTemplate: (templateId: string) => api.get(`/api/contracts/templates/${templateId}`),
+    getAll: (walletAddress?: string) =>
+      api.get('/api/contracts', {
+        params: walletAddress ? { walletAddress } : {},
+      }),
+    getById: (id: string) => api.get(`/api/contracts/${id}`),
+    save: (data: {
+      name: string;
+      address: string;
+      chainId: number;
+      abi: any[];
+      templateId?: string;
+      constructorArgs?: any;
+      txHash?: string;
+      blockNumber?: number;
+      isUpgradeable?: boolean;
+      proxyAddress?: string;
+      walletAddress?: string;
+    }) => api.post('/api/contracts', data),
+    update: (id: string, data: {
+      name?: string;
+      abi?: any[];
+      proxyAddress?: string;
+      implementationAddress?: string;
+    }) => api.patch(`/api/contracts/${id}`, data),
+    delete: (id: string) => api.delete(`/api/contracts/${id}`),
+    saveAbi: (data: {
+      name: string;
+      abi: any[];
+      description?: string;
+      walletAddress?: string;
+    }) => api.post('/api/contracts/abis', data),
+    getAbis: (walletAddress?: string) =>
+      api.get('/api/contracts/abis/list', {
+        params: walletAddress ? { walletAddress } : {},
+      }),
+  },
+
+  // API Keys
+  apiKeys: {
+    list: () => api.get('/api/api-keys'),
+    create: (data: { name: string; scopes?: string[]; expires_in_days?: number }) =>
+      api.post('/api/api-keys', data),
+    revoke: (id: string) => api.delete(`/api/api-keys/${id}`),
+  },
+
+  // Webhooks
+  webhooks: {
+    list: () => api.get('/api/webhooks'),
+    create: (data: { name: string; url: string; events: string[]; chain_id?: string }) =>
+      api.post('/api/webhooks', data),
+    update: (id: string, data: { name?: string; url?: string; events?: string[]; is_active?: boolean }) =>
+      api.put(`/api/webhooks/${id}`, data),
+    delete: (id: string) => api.delete(`/api/webhooks/${id}`),
+  },
+
+  // Organizations
+  organizations: {
+    getAll: () => api.get('/api/organizations'),
+    getById: (orgId: string) => api.get(`/api/organizations/${orgId}`),
+    create: (data: { name: string; slug?: string; description?: string }) =>
+      api.post('/api/organizations', data),
+    update: (orgId: string, data: any) => api.put(`/api/organizations/${orgId}`, data),
+  },
+
+  // White-Label
+  whitelabel: {
+    getSettings: (orgId: string) => api.get(`/api/whitelabel/${orgId}`),
+    updateSettings: (orgId: string, data: {
+      branding?: {
+        logo?: string;
+        favicon?: string;
+        companyName?: string;
+        supportEmail?: string;
+      };
+      colors?: {
+        primary?: string;
+        secondary?: string;
+        accent?: string;
+        background?: string;
+      };
+      domain?: string;
+      termsOfService?: string;
+      customCss?: string;
+    }) => api.put(`/api/whitelabel/${orgId}`, data),
+    getByDomain: (domain: string) => api.get(`/api/whitelabel/domain/${domain}`),
+    uploadAsset: (orgId: string, type: 'logo' | 'favicon', url: string) =>
+      api.post(`/api/whitelabel/${orgId}/upload`, { type, url }),
   },
 };
 

@@ -1,0 +1,160 @@
+{
+  "templates": [
+    {
+      "id": "erc20-token",
+      "name": "ERC20 Token",
+      "description": "Standard fungible token contract with transfer, approve, and allowance functionality",
+      "category": "token",
+      "icon": "🪙",
+      "isOfficial": true,
+      "tags": ["token", "erc20", "fungible", "standard"],
+      "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\n\ncontract MyToken is ERC20 {\n    constructor(\n        string memory name,\n        string memory symbol,\n        uint256 initialSupply\n    ) ERC20(name, symbol) {\n        _mint(msg.sender, initialSupply * 10**decimals());\n    }\n}",
+      "constructorParams": [
+        {
+          "name": "name",
+          "type": "string",
+          "label": "Token Name",
+          "placeholder": "My Token",
+          "required": true
+        },
+        {
+          "name": "symbol",
+          "type": "string",
+          "label": "Token Symbol",
+          "placeholder": "MTK",
+          "required": true
+        },
+        {
+          "name": "initialSupply",
+          "type": "uint256",
+          "label": "Initial Supply",
+          "placeholder": "1000000",
+          "required": true
+        }
+      ],
+      "features": ["transfer", "approve", "allowance", "balanceOf"],
+      "upgradeable": false
+    },
+    {
+      "id": "erc721-nft",
+      "name": "ERC721 NFT",
+      "description": "Non-fungible token contract for unique digital assets",
+      "category": "nft",
+      "icon": "🖼️",
+      "isOfficial": true,
+      "tags": ["nft", "erc721", "non-fungible", "collectible"],
+      "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC721/ERC721.sol\";\nimport \"@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol\";\n\ncontract MyNFT is ERC721, ERC721URIStorage {\n    uint256 private _nextTokenId;\n    \n    constructor(\n        string memory name,\n        string memory symbol\n    ) ERC721(name, symbol) {}\n    \n    function safeMint(address to, string memory uri) public {\n        uint256 tokenId = _nextTokenId++;\n        _safeMint(to, tokenId);\n        _setTokenURI(tokenId, uri);\n    }\n    \n    function tokenURI(uint256 tokenId) public view override(ERC721, ERC721URIStorage) returns (string memory) {\n        return super.tokenURI(tokenId);\n    }\n    \n    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC721URIStorage) returns (bool) {\n        return super.supportsInterface(interfaceId);\n    }\n}",
+      "constructorParams": [
+        {
+          "name": "name",
+          "type": "string",
+          "label": "Collection Name",
+          "placeholder": "My NFT Collection",
+          "required": true
+        },
+        {
+          "name": "symbol",
+          "type": "string",
+          "label": "Collection Symbol",
+          "placeholder": "MNFT",
+          "required": true
+        }
+      ],
+      "features": ["mint", "transfer", "tokenURI", "balanceOf"],
+      "upgradeable": false
+    },
+    {
+      "id": "erc1155-multi",
+      "name": "ERC1155 Multi Token",
+      "description": "Semi-fungible token contract supporting multiple token types",
+      "category": "token",
+      "icon": "🎴",
+      "isOfficial": true,
+      "tags": ["multi-token", "erc1155", "semi-fungible"],
+      "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC1155/ERC1155.sol\";\n\ncontract MyMultiToken is ERC1155 {\n    constructor(string memory uri) ERC1155(uri) {}\n    \n    function mint(address to, uint256 id, uint256 amount) public {\n        _mint(to, id, amount, \"\");\n    }\n    \n    function mintBatch(address to, uint256[] memory ids, uint256[] memory amounts) public {\n        _mintBatch(to, ids, amounts, \"\");\n    }\n}",
+      "constructorParams": [
+        {
+          "name": "uri",
+          "type": "string",
+          "label": "Base URI",
+          "placeholder": "https://api.example.com/metadata/{id}.json",
+          "required": true
+        }
+      ],
+      "features": ["mint", "mintBatch", "transfer", "balanceOf"],
+      "upgradeable": false
+    },
+    {
+      "id": "upgradeable-proxy",
+      "name": "Upgradeable Proxy",
+      "description": "Upgradeable contract using UUPS proxy pattern",
+      "category": "infrastructure",
+      "icon": "⬆️",
+      "isOfficial": true,
+      "tags": ["upgradeable", "proxy", "uups", "governance"],
+      "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\n\ncontract UpgradeableContract is UUPSUpgradeable, OwnableUpgradeable {\n    uint256 public value;\n    \n    function initialize(uint256 _initialValue) public initializer {\n        __Ownable_init(msg.sender);\n        __UUPSUpgradeable_init();\n        value = _initialValue;\n    }\n    \n    function setValue(uint256 _newValue) public onlyOwner {\n        value = _newValue;\n    }\n    \n    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}\n}",
+      "constructorParams": [
+        {
+          "name": "initialValue",
+          "type": "uint256",
+          "label": "Initial Value",
+          "placeholder": "0",
+          "required": true
+        }
+      ],
+      "features": ["upgrade", "setValue", "value"],
+      "upgradeable": true,
+      "proxyType": "UUPS"
+    },
+    {
+      "id": "simple-storage",
+      "name": "Simple Storage",
+      "description": "Basic storage contract for storing and retrieving data",
+      "category": "utility",
+      "icon": "📦",
+      "isOfficial": true,
+      "tags": ["storage", "simple", "utility"],
+      "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\ncontract SimpleStorage {\n    uint256 public storedData;\n    \n    event DataStored(uint256 indexed oldValue, uint256 indexed newValue);\n    \n    function set(uint256 x) public {\n        uint256 oldValue = storedData;\n        storedData = x;\n        emit DataStored(oldValue, x);\n    }\n    \n    function get() public view returns (uint256) {\n        return storedData;\n    }\n}",
+      "constructorParams": [],
+      "features": ["set", "get"],
+      "upgradeable": false
+    },
+    {
+      "id": "voting-contract",
+      "name": "Voting Contract",
+      "description": "Simple voting contract for proposals and voting",
+      "category": "governance",
+      "icon": "🗳️",
+      "isOfficial": true,
+      "tags": ["voting", "governance", "proposal"],
+      "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\ncontract Voting {\n    struct Proposal {\n        string description;\n        uint256 voteCount;\n        bool executed;\n    }\n    \n    Proposal[] public proposals;\n    mapping(address => mapping(uint256 => bool)) public hasVoted;\n    \n    function createProposal(string memory description) public returns (uint256) {\n        proposals.push(Proposal({\n            description: description,\n            voteCount: 0,\n            executed: false\n        }));\n        return proposals.length - 1;\n    }\n    \n    function vote(uint256 proposalId) public {\n        require(!hasVoted[msg.sender][proposalId], \"Already voted\");\n        require(proposalId < proposals.length, \"Invalid proposal\");\n        \n        hasVoted[msg.sender][proposalId] = true;\n        proposals[proposalId].voteCount++;\n    }\n    \n    function getProposal(uint256 proposalId) public view returns (Proposal memory) {\n        return proposals[proposalId];\n    }\n}",
+      "constructorParams": [],
+      "features": ["createProposal", "vote", "getProposal"],
+      "upgradeable": false
+    }
+  ]
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

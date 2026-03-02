@@ -71,13 +71,31 @@ export default function ChainDetailPage() {
     loadTransactions()
 
     // Auto-refresh metrics every 15 seconds
-    const interval = setInterval(() => {
+    const metricsInterval = setInterval(() => {
       loadMetrics()
       loadTransactions()
     }, 15000)
 
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(metricsInterval)
+    }
   }, [chainId])
+
+  // Separate effect for status polling when deploying
+  useEffect(() => {
+    if (!chainId || chain?.status !== 'deploying') {
+      return
+    }
+    
+    // Auto-refresh chain data every 5 seconds if status is "deploying" to catch status updates
+    const statusInterval = setInterval(() => {
+      loadChainData()
+    }, 5000)
+
+    return () => {
+      clearInterval(statusInterval)
+    }
+  }, [chainId, chain?.status])
 
   const loadChainData = async () => {
     if (!chainId) {
@@ -128,7 +146,71 @@ export default function ChainDetailPage() {
           setLoading(false)
           return
         } else if (response.status === 404) {
-          console.warn('Chain not found in API, checking localStorage')
+          console.warn('Chain not found in API (404), checking localStorage and retrying...')
+          
+          // If chain was just deployed, it might not be immediately available
+          // Retry after a short delay
+          const urlParams = new URLSearchParams(window.location.search)
+          const isNewDeployment = urlParams.get('new') === 'true'
+          
+          if (isNewDeployment) {
+            console.log('New deployment detected, retrying multiple times...')
+            
+            // Retry up to 5 times with increasing delays
+            let retryCount = 0
+            const maxRetries = 5
+            const retryInterval = setInterval(async () => {
+              retryCount++
+              try {
+                const retryUrl = address 
+                  ? `${apiUrl}/api/chains/${encodeURIComponent(chainId)}?walletAddress=${encodeURIComponent(address)}`
+                  : `${apiUrl}/api/chains/${encodeURIComponent(chainId)}`
+                
+                const authToken = localStorage.getItem('authToken')
+                const headers: HeadersInit = {
+                  'Content-Type': 'application/json'
+                }
+                if (authToken) {
+                  headers['Authorization'] = `Bearer ${authToken}`
+                }
+                
+                const retryResponse = await fetch(retryUrl, { headers })
+                if (retryResponse.ok) {
+                  const retryChain = await retryResponse.json()
+                  console.log(`✅ Chain found on retry attempt ${retryCount}`)
+                  setChain(retryChain)
+                  setLoading(false)
+                  clearInterval(retryInterval)
+                  
+                  // Save to localStorage
+                  const existingChains = JSON.parse(localStorage.getItem('userChains') || '[]')
+                  const existingIndex = existingChains.findIndex((c: any) => c.id === retryChain.id)
+                  if (existingIndex >= 0) {
+                    existingChains[existingIndex] = retryChain
+                  } else {
+                    existingChains.push(retryChain)
+                  }
+                  localStorage.setItem('userChains', JSON.stringify(existingChains))
+                  return
+                } else if (retryResponse.status === 404 && retryCount < maxRetries) {
+                  console.log(`Retry attempt ${retryCount} failed, will retry again...`)
+                } else if (retryCount >= maxRetries) {
+                  console.error('Max retries reached, chain still not found')
+                  clearInterval(retryInterval)
+                }
+              } catch (retryError) {
+                console.warn(`Retry attempt ${retryCount} error:`, retryError)
+                if (retryCount >= maxRetries) {
+                  clearInterval(retryInterval)
+                }
+              }
+            }, 2000) // Retry every 2 seconds
+            
+            // Clear interval after 15 seconds max
+            setTimeout(() => {
+              clearInterval(retryInterval)
+            }, 15000)
+          }
         } else if (response.status === 401) {
           console.warn('Unauthorized - chain might be in localStorage only')
         }
@@ -367,11 +449,18 @@ export default function ChainDetailPage() {
     )
   }
 
-  const statusColor = chain.status === 'active' || chain.isActive 
-    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
-    : chain.status === 'deploying' 
-    ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' 
-    : 'bg-red-500/20 text-red-400 border-red-500/30'
+  const getStatusDisplay = () => {
+    if (chain.status === 'active' || chain.isActive) {
+      return { text: 'Active', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' }
+    } else if (chain.status === 'deploying') {
+      return { text: 'Deploying', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' }
+    } else {
+      return { text: chain.status || 'Inactive', color: 'bg-red-500/20 text-red-400 border-red-500/30' }
+    }
+  }
+  
+  const statusDisplay = getStatusDisplay()
+  const statusColor = statusDisplay.color
 
   return (
     <DashboardLayout>
@@ -445,19 +534,26 @@ export default function ChainDetailPage() {
                       <h1 className="text-3xl font-bold font-mono bg-gradient-to-r from-cyan-400 via-blue-400 to-emerald-400 bg-clip-text text-transparent">
                         {chain.name}
                       </h1>
-                      <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${statusColor} font-mono capitalize`}>
-                        {chain.status === 'active' || chain.isActive ? 'Active' : chain.status || 'Inactive'}
+                      <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${statusColor} font-mono capitalize flex items-center gap-2`}>
+                        {statusDisplay.text}
+                        {chain.status === 'deploying' && (
+                          <motion.div
+                            className="w-2 h-2 bg-yellow-400 rounded-full"
+                            animate={{ opacity: [1, 0.5, 1] }}
+                            transition={{ duration: 1.5, repeat: Infinity }}
+                          />
+                        )}
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-sm">
                       <span className="px-3 py-1 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 capitalize font-mono">
-                        {chain.chainType}
+                        {chain.chainType || chain.chain_type || 'N/A'}
                       </span>
                       <span className="px-3 py-1 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 font-mono">
-                        {chain.rollupType}
+                        {chain.rollupType || chain.rollup_type || 'N/A'}
                       </span>
                       <span className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono">
-                        {chain.gasToken} Gas Token
+                        {(chain.gasToken || chain.gas_token || 'N/A')} Gas Token
                       </span>
                     </div>
                   </div>
@@ -500,40 +596,52 @@ export default function ChainDetailPage() {
 
               {/* Endpoints */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {chain.rpcUrl && (
+                {/* Always show RPC URL - generate if not present */}
+                {(chain.rpcUrl || chain.rpc_url) && (
                   <div className="relative bg-slate-900/50 rounded-xl p-4 border border-cyan-500/20 hover:border-cyan-500/40 transition-all group">
                     <div className="absolute inset-0 bg-[linear-gradient(to_right,#06b6d4_0.5px,transparent_0.5px),linear-gradient(to_bottom,#06b6d4_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-5 pointer-events-none" />
                     <div className="relative z-10 flex items-center justify-between mb-2">
                       <div className="text-sm text-gray-400 font-mono">RPC URL</div>
-                      <button onClick={() => copyToClipboard(chain.rpcUrl)} className="text-gray-400 hover:text-cyan-400 transition-colors">
+                      <button onClick={() => copyToClipboard(chain.rpcUrl || chain.rpc_url)} className="text-gray-400 hover:text-cyan-400 transition-colors">
                         <Copy className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="font-mono text-sm truncate text-cyan-300">{chain.rpcUrl}</div>
+                    <div className="font-mono text-sm truncate text-cyan-300">{chain.rpcUrl || chain.rpc_url}</div>
                   </div>
                 )}
-                {(chain.blockchainTxHash && chain.polygonScanUrl) ? (
+                {/* Show RPC URL placeholder if deploying but RPC not yet available */}
+                {(!chain.rpcUrl && !chain.rpc_url && chain.status === 'deploying') && (
+                  <div className="relative bg-slate-900/50 rounded-xl p-4 border border-cyan-500/20 hover:border-cyan-500/40 transition-all group opacity-60">
+                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#06b6d4_0.5px,transparent_0.5px),linear-gradient(to_bottom,#06b6d4_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-5 pointer-events-none" />
+                    <div className="relative z-10 flex items-center justify-between mb-2">
+                      <div className="text-sm text-gray-400 font-mono">RPC URL</div>
+                      <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                    <div className="font-mono text-sm text-gray-500">Generating RPC endpoint...</div>
+                  </div>
+                )}
+                {(chain.blockchainTxHash || chain.blockchain_tx_hash) && (chain.polygonScanUrl || chain.polygon_scan_url) ? (
                   <div className="relative bg-slate-900/50 rounded-xl p-4 border border-blue-500/20 hover:border-blue-500/40 transition-all group">
                     <div className="absolute inset-0 bg-[linear-gradient(to_right,#3b82f6_0.5px,transparent_0.5px),linear-gradient(to_bottom,#3b82f6_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-5 pointer-events-none" />
                     <div className="relative z-10 flex items-center justify-between mb-2">
                       <div className="text-sm text-gray-400 font-mono">Explorer</div>
-                      <a href={chain.polygonScanUrl} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-400 transition-colors">
+                      <a href={chain.polygonScanUrl || chain.polygon_scan_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-400 transition-colors">
                         <ExternalLink className="w-4 h-4" />
                       </a>
                     </div>
-                    <div className="font-mono text-xs truncate text-blue-300 mb-1">{chain.blockchainTxHash}</div>
+                    <div className="font-mono text-xs truncate text-blue-300 mb-1">{chain.blockchainTxHash || chain.blockchain_tx_hash}</div>
                     <div className="text-xs text-gray-500 font-mono">On-Chain Registration</div>
                   </div>
-                ) : chain.explorerUrl ? (
+                ) : (chain.explorerUrl || chain.explorer_url) ? (
                   <div className="relative bg-slate-900/50 rounded-xl p-4 border border-blue-500/20 hover:border-blue-500/40 transition-all group">
                     <div className="absolute inset-0 bg-[linear-gradient(to_right,#3b82f6_0.5px,transparent_0.5px),linear-gradient(to_bottom,#3b82f6_0.5px,transparent_0.5px)] bg-[size:20px_20px] opacity-5 pointer-events-none" />
                     <div className="relative z-10 flex items-center justify-between mb-2">
                       <div className="text-sm text-gray-400 font-mono">Explorer</div>
-                      <a href={chain.explorerUrl} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-400 transition-colors">
+                      <a href={chain.explorerUrl || chain.explorer_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-400 transition-colors">
                         <ExternalLink className="w-4 h-4" />
                       </a>
                     </div>
-                    <div className="font-mono text-sm truncate text-blue-300">{chain.explorerUrl}</div>
+                    <div className="font-mono text-sm truncate text-blue-300">{chain.explorerUrl || chain.explorer_url}</div>
                   </div>
                 ) : null}
                 {chain.bridgeUrl && (
@@ -828,6 +936,33 @@ export default function ChainDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+        </motion.div>
+
+        {/* Health Monitoring Quick Link */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="glass-card p-6"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20">
+                <Activity className="w-6 h-6 text-green-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold font-mono">Health Monitoring</h3>
+                <p className="text-sm text-gray-400 font-mono">Real-time health status and alerts</p>
+              </div>
+            </div>
+            <Link
+              href={`/dashboard/chains/${chainId}/health`}
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 transition-all flex items-center gap-2 font-mono"
+            >
+              <Activity className="w-4 h-4" />
+              View Health
+            </Link>
           </div>
         </motion.div>
 

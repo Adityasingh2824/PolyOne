@@ -1,0 +1,6 @@
+{
+  "chainId": "700ffa56-5e12-4dac-8b17-55a977c5c334",
+  "status": "failed",
+  "error": "Cannot access 'deploymentResult' before initialization",
+  "failedAt": "2025-12-24T15:29:42.421Z"
+}

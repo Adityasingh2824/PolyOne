@@ -131,29 +131,35 @@ export default function CreateChainPage() {
       console.log('Contract code found at address:', contractAddress)
 
       // Test contract connection by calling a view function
-      // Try new contract first, fallback to legacy
+      // Try to detect which contract type is deployed
       let contract
       let contractWithSigner
       let contractABI = POLYONE_CHAIN_FACTORY_ABI
+      let isPolyOneFactory = false
       
+      // First, try PolyOneChainFactory (check for deploymentFee function)
       try {
         contract = new ethers.Contract(contractAddress, POLYONE_CHAIN_FACTORY_ABI, provider)
-        const totalChains = await contract.getTotalChains()
-        console.log('Contract connection test successful. Total chains:', totalChains.toString())
+        // Try to call deploymentFee() - this only exists in PolyOneChainFactory
+        const deploymentFee = await contract.deploymentFee()
+        console.log('Detected PolyOneChainFactory. Deployment fee:', ethers.formatEther(deploymentFee))
+        isPolyOneFactory = true
+        contractABI = POLYONE_CHAIN_FACTORY_ABI
         contractWithSigner = new ethers.Contract(contractAddress, POLYONE_CHAIN_FACTORY_ABI, signer)
       } catch (testError: any) {
-        console.warn('New contract ABI failed, trying legacy:', testError)
+        console.log('PolyOneChainFactory not detected, trying Legacy ChainFactory:', testError.message)
         // Fallback to legacy contract
-        contract = new ethers.Contract(contractAddress, LEGACY_CHAIN_FACTORY_ABI, provider)
-        contractABI = LEGACY_CHAIN_FACTORY_ABI
         try {
+          contract = new ethers.Contract(contractAddress, LEGACY_CHAIN_FACTORY_ABI, provider)
+          contractABI = LEGACY_CHAIN_FACTORY_ABI
+          isPolyOneFactory = false
           const totalChains = await contract.getTotalChains()
-          console.log('Legacy contract connection successful. Total chains:', totalChains.toString())
+          console.log('Legacy ChainFactory detected. Total chains:', totalChains.toString())
+          contractWithSigner = new ethers.Contract(contractAddress, LEGACY_CHAIN_FACTORY_ABI, signer)
         } catch (legacyError: any) {
-          console.warn('Legacy contract connection test failed:', legacyError)
-          // Don't throw, just log - the contract might still work for write operations
+          console.error('Both contract ABIs failed:', legacyError)
+          throw new Error('Unable to connect to contract. Please verify the contract address is correct.')
         }
-        contractWithSigner = new ethers.Contract(contractAddress, LEGACY_CHAIN_FACTORY_ABI, signer)
       }
 
       // Generate temporary URLs (will be updated after backend deployment)
@@ -169,38 +175,148 @@ export default function CreateChainPage() {
         throw new Error('Insufficient balance. Please add POL/MATIC to your wallet.')
       }
 
-      // Prepare transaction parameters
-      const txParams = {
-        name: formData.name,
-        chainType: formData.chainType,
-        rollupType: formData.rollupType,
-        gasToken: formData.gasToken.toUpperCase(),
-        validators: parseInt(formData.initialValidators),
-        rpcUrl: tempRpcUrl,
-        explorerUrl: tempExplorerUrl
+      // Prepare transaction parameters based on contract type
+      let txParams: any
+      
+      if (isPolyOneFactory) {
+        // PolyOneChainFactory requires: name, symbol, chainType (enum), validatorAccess (enum), gasToken, validatorCount, config (struct)
+        // Map rollupType string to ChainType enum (0=ZkRollup, 1=OptimisticRollup, 2=Validium)
+        const chainTypeMap: Record<string, number> = {
+          'zk-rollup': 0,        // ChainType.ZkRollup
+          'optimistic-rollup': 1, // ChainType.OptimisticRollup
+          'validium': 2          // ChainType.Validium
+        }
+        
+        // Map validatorAccess string to ValidatorAccess enum (0=Public, 1=Permissioned, 2=Private)
+        const validatorAccessMap: Record<string, number> = {
+          'public': 0,        // ValidatorAccess.Public
+          'permissioned': 1,  // ValidatorAccess.Permissioned
+          'private': 2        // ValidatorAccess.Private
+        }
+        
+        const chainTypeEnum = chainTypeMap[formData.rollupType.toLowerCase()] ?? 0
+        const validatorAccessEnum = validatorAccessMap[formData.validatorAccess?.toLowerCase() || 'public'] ?? 0
+        
+        // Generate symbol from name (first 3-4 uppercase letters, min 2 chars)
+        let symbol = formData.name
+          .substring(0, 4)
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, '')
+        
+        if (symbol.length < 2) {
+          symbol = formData.name.substring(0, 10).toUpperCase().replace(/[^A-Z0-9]/g, '') || 'CHAIN'
+        }
+        if (symbol.length > 10) {
+          symbol = symbol.substring(0, 10)
+        }
+        
+        txParams = {
+          name: formData.name,
+          symbol: symbol,
+          chainType: chainTypeEnum,
+          validatorAccess: validatorAccessEnum,
+          gasToken: formData.gasToken.toUpperCase(),
+          validatorCount: parseInt(formData.initialValidators),
+          config: {
+            maxTps: 1000,
+            blockGasLimit: 30000000,
+            blockTime: 2000, // milliseconds
+            maxValidators: 100,
+            bridgeEnabled: true,
+            analyticsEnabled: true
+          }
+        }
+      } else {
+        // Legacy ChainFactory
+        txParams = {
+          name: formData.name,
+          chainType: formData.chainType,
+          rollupType: formData.rollupType,
+          gasToken: formData.gasToken.toUpperCase(),
+          validators: parseInt(formData.initialValidators),
+          rpcUrl: tempRpcUrl,
+          explorerUrl: tempExplorerUrl
+        }
       }
 
       console.log('Transaction parameters:', txParams)
       console.log('Contract address:', contractAddress)
+      console.log('Contract type:', isPolyOneFactory ? 'PolyOneChainFactory' : 'Legacy ChainFactory')
       console.log('Signer address:', await signer.getAddress())
+
+      // Check deployment fee for PolyOneChainFactory
+      let deploymentFee = 0n
+      if (isPolyOneFactory) {
+        try {
+          deploymentFee = await contract.deploymentFee()
+          const balance = await provider.getBalance(await signer.getAddress())
+          console.log('Deployment fee required:', ethers.formatEther(deploymentFee), 'ETH')
+          console.log('Wallet balance:', ethers.formatEther(balance), 'ETH')
+          
+          if (balance < deploymentFee) {
+            throw new Error(`Insufficient balance. Required: ${ethers.formatEther(deploymentFee)} ETH, Have: ${ethers.formatEther(balance)} ETH`)
+          }
+        } catch (feeError: any) {
+          console.warn('Could not check deployment fee:', feeError.message)
+          toast.error('Warning: Could not verify deployment fee. Transaction may fail if insufficient balance.', {
+            duration: 5000
+          })
+        }
+      }
 
       // First, try to populate the transaction to validate it
       let populatedTx
       try {
         toast.loading('⏳ Preparing transaction...', { id: 'blockchain-tx' })
-        populatedTx = await contractWithSigner.createChain.populateTransaction(
-          txParams.name,
-          txParams.chainType,
-          txParams.rollupType,
-          txParams.gasToken,
-          txParams.validators,
-          txParams.rpcUrl,
-          txParams.explorerUrl
-        )
+        
+        if (isPolyOneFactory) {
+          // PolyOneChainFactory signature
+          populatedTx = await contractWithSigner.createChain.populateTransaction(
+            txParams.name,
+            txParams.symbol,
+            txParams.chainType,
+            txParams.validatorAccess,
+            txParams.gasToken,
+            txParams.validatorCount,
+            txParams.config,
+            {
+              value: deploymentFee // Include deployment fee
+            }
+          )
+        } else {
+          // Legacy ChainFactory signature
+          populatedTx = await contractWithSigner.createChain.populateTransaction(
+            txParams.name,
+            txParams.chainType,
+            txParams.rollupType,
+            txParams.gasToken,
+            txParams.validators,
+            txParams.rpcUrl,
+            txParams.explorerUrl
+          )
+        }
         console.log('Populated transaction:', populatedTx)
       } catch (populateError: any) {
         console.error('Transaction populate error:', populateError)
-        throw new Error(`Failed to prepare transaction: ${populateError.message || populateError.reason || 'Unknown error'}`)
+        console.error('Contract type:', isPolyOneFactory ? 'PolyOneChainFactory' : 'Legacy ChainFactory')
+        console.error('Parameters being sent:', txParams)
+        
+        let errorMessage = 'Failed to prepare transaction. '
+        if (populateError.reason) {
+          errorMessage += `Reason: ${populateError.reason}. `
+        }
+        if (populateError.message) {
+          errorMessage += populateError.message
+        } else {
+          errorMessage += 'Please check that all required parameters are provided and valid.'
+        }
+        
+        // Add helpful hints based on contract type
+        if (isPolyOneFactory) {
+          errorMessage += ' Make sure you have sufficient balance for the deployment fee.'
+        }
+        
+        throw new Error(errorMessage)
       }
 
       // Estimate gas with populated transaction
@@ -282,20 +398,40 @@ export default function CreateChainPage() {
 
         // Send transaction - use contract method directly for better compatibility
         // This lets ethers handle the transaction format automatically
-        tx = await contractWithSigner.createChain(
-          txParams.name,
-          txParams.chainType,
-          txParams.rollupType,
-          txParams.gasToken,
-          txParams.validators,
-          txParams.rpcUrl,
-          txParams.explorerUrl,
-          {
-            gasLimit: gasEstimate,
-            gasPrice: legacyGasPrice,
-            type: 0 // Force legacy transaction
-          }
-        )
+        if (isPolyOneFactory) {
+          // PolyOneChainFactory signature
+          tx = await contractWithSigner.createChain(
+            txParams.name,
+            txParams.symbol,
+            txParams.chainType,
+            txParams.validatorAccess,
+            txParams.gasToken,
+            txParams.validatorCount,
+            txParams.config,
+            {
+              gasLimit: gasEstimate,
+              gasPrice: legacyGasPrice,
+              value: deploymentFee,
+              type: 0 // Force legacy transaction
+            }
+          )
+        } else {
+          // Legacy ChainFactory signature
+          tx = await contractWithSigner.createChain(
+            txParams.name,
+            txParams.chainType,
+            txParams.rollupType,
+            txParams.gasToken,
+            txParams.validators,
+            txParams.rpcUrl,
+            txParams.explorerUrl,
+            {
+              gasLimit: gasEstimate,
+              gasPrice: legacyGasPrice,
+              type: 0 // Force legacy transaction
+            }
+          )
+        }
         console.log('Transaction sent:', tx.hash)
       } catch (txError: any) {
         console.error('Transaction send error:', txError)
@@ -312,28 +448,26 @@ export default function CreateChainPage() {
           try {
             console.log('Retrying with explicit legacy transaction format...')
             const retryGasPrice = await fetchLegacyGasPrice()
-            tx = await contractWithSigner.createChain(
-              txParams.name,
-              txParams.chainType,
-              txParams.rollupType,
-              txParams.gasToken,
-              txParams.validators,
-              txParams.rpcUrl,
-              txParams.explorerUrl,
-              {
-                gasLimit: gasEstimate,
-                gasPrice: retryGasPrice
-                // Don't specify type - let ethers infer it from gasPrice
-              }
-            )
-            console.log('Retry successful, transaction sent:', tx.hash)
-          } catch (retryError: any) {
-            console.error('Retry also failed:', retryError)
+            const retryDeploymentFee = isPolyOneFactory 
+              ? await contract.deploymentFee().catch(() => 0n)
+              : 0n
             
-            // Final attempt - use the most basic transaction format
-            try {
-              console.log('Final attempt with minimal transaction params...')
-              const finalGasPrice = await fetchLegacyGasPrice()
+            if (isPolyOneFactory) {
+              tx = await contractWithSigner.createChain(
+                txParams.name,
+                txParams.symbol,
+                txParams.chainType,
+                txParams.validatorAccess,
+                txParams.gasToken,
+                txParams.validatorCount,
+                txParams.config,
+                {
+                  gasLimit: gasEstimate,
+                  gasPrice: retryGasPrice,
+                  value: retryDeploymentFee
+                }
+              )
+            } else {
               tx = await contractWithSigner.createChain(
                 txParams.name,
                 txParams.chainType,
@@ -343,9 +477,51 @@ export default function CreateChainPage() {
                 txParams.rpcUrl,
                 txParams.explorerUrl,
                 {
-                  gasPrice: finalGasPrice
+                  gasLimit: gasEstimate,
+                  gasPrice: retryGasPrice
                 }
               )
+            }
+            console.log('Retry successful, transaction sent:', tx.hash)
+          } catch (retryError: any) {
+            console.error('Retry also failed:', retryError)
+            
+            // Final attempt - use the most basic transaction format
+            try {
+              console.log('Final attempt with minimal transaction params...')
+              const finalGasPrice = await fetchLegacyGasPrice()
+              const finalDeploymentFee = isPolyOneFactory 
+                ? await contract.deploymentFee().catch(() => 0n)
+                : 0n
+              
+              if (isPolyOneFactory) {
+                tx = await contractWithSigner.createChain(
+                  txParams.name,
+                  txParams.symbol,
+                  txParams.chainType,
+                  txParams.validatorAccess,
+                  txParams.gasToken,
+                  txParams.validatorCount,
+                  txParams.config,
+                  {
+                    gasPrice: finalGasPrice,
+                    value: finalDeploymentFee
+                  }
+                )
+              } else {
+                tx = await contractWithSigner.createChain(
+                  txParams.name,
+                  txParams.chainType,
+                  txParams.rollupType,
+                  txParams.gasToken,
+                  txParams.validators,
+                  txParams.rpcUrl,
+                  txParams.explorerUrl,
+                  {
+                    gasPrice: finalGasPrice
+                  }
+                )
+              }
               console.log('Final attempt successful:', tx.hash)
             } catch (finalError: any) {
               console.error('All attempts failed:', finalError)
@@ -551,7 +727,12 @@ export default function CreateChainPage() {
         // Navigate to the chain detail page using the correct ID
         setTimeout(() => {
           if (chainData.id) {
-            router.push(`/dashboard/chains/${encodeURIComponent(chainData.id)}`)
+            const params = new URLSearchParams()
+            if (address) {
+              params.set('walletAddress', address)
+            }
+            params.set('new', 'true') // Flag to indicate this is a new deployment
+            router.push(`/dashboard/chains/${encodeURIComponent(chainData.id)}?${params.toString()}`)
           } else {
             router.push('/dashboard')
           }

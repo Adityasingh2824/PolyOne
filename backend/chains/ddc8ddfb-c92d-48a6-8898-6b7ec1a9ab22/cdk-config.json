@@ -1,0 +1,28 @@
+{
+  "chainId": 6,
+  "chainName": "bhu",
+  "rollupType": "optimistic-rollup",
+  "gasToken": "POL",
+  "validators": 5,
+  "chainType": "public",
+  "validatorAccess": "public",
+  "network": "testnet",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x...",
+    "polTokenAddress": "0x0000000000000000000000000000000000001010"
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "rollup",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00",
+    "maxTransactionsPerBlock": 1000
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": 6
+  }
+}

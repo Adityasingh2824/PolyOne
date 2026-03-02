@@ -221,18 +221,70 @@ async function getBridgeStatus(chainId) {
  */
 async function getBridgeTransactions(chainId, limit = 20) {
   try {
-    // In production, this would query the bridge contract events
-    // For MVP, return simulated data
-    return Array.from({ length: limit }, (_, i) => ({
-      id: `bridge-tx-${chainId}-${i}`,
-      txHash: `0x${Math.random().toString(16).substr(2, 64)}`,
-      amount: (Math.random() * 100).toFixed(4),
-      token: 'MATIC',
-      from: chainId,
-      to: 'Polygon PoS',
-      status: ['pending', 'confirmed', 'completed'][Math.floor(Math.random() * 3)],
-      timestamp: new Date(Date.now() - i * 3600000).toISOString()
-    }));
+    // Get bridge configuration
+    const fs = require('fs').promises;
+    const path = require('path');
+    const chainDir = path.join(process.cwd(), 'chains', chainId);
+    const bridgeConfigPath = path.join(chainDir, 'bridge-config.json');
+    
+    let bridgeConfig;
+    try {
+      const configData = await fs.readFile(bridgeConfigPath, 'utf8');
+      bridgeConfig = JSON.parse(configData);
+    } catch {
+      logger.warn(`Bridge configuration not found for chain ${chainId}`);
+      return [];
+    }
+
+    // Query bridge contract events
+    if (bridgeConfig.bridgeAddress && bridgeConfig.bridgeAddress !== '0x...') {
+      try {
+        const provider = new ethers.JsonRpcProvider(bridgeConfig.sourceChain.rpcUrl);
+        const bridgeABI = [
+          "event BridgeTransfer(address indexed from, address indexed to, uint256 amount, bytes32 indexed txHash)",
+          "function getBridgeHistory(uint256 limit) external view returns (tuple(address from, address to, uint256 amount, bytes32 txHash, uint256 timestamp)[])"
+        ];
+        
+        const bridgeContract = new ethers.Contract(bridgeConfig.bridgeAddress, bridgeABI, provider);
+        
+        // Try to get history from contract if available
+        try {
+          const history = await bridgeContract.getBridgeHistory(limit);
+          return history.map((tx, i) => ({
+            id: `bridge-tx-${chainId}-${i}`,
+            txHash: tx.txHash,
+            amount: ethers.formatEther(tx.amount),
+            token: 'MATIC',
+            from: tx.from,
+            to: tx.to,
+            status: 'completed',
+            timestamp: new Date(Number(tx.timestamp) * 1000).toISOString()
+          }));
+        } catch {
+          // If getBridgeHistory not available, query events
+          const filter = bridgeContract.filters.BridgeTransfer();
+          const events = await bridgeContract.queryFilter(filter, -limit);
+          
+          return events.map((event, i) => ({
+            id: `bridge-tx-${chainId}-${i}`,
+            txHash: event.transactionHash,
+            amount: ethers.formatEther(event.args.amount),
+            token: 'MATIC',
+            from: event.args.from,
+            to: event.args.to,
+            status: 'completed',
+            timestamp: new Date().toISOString()
+          }));
+        }
+      } catch (contractError) {
+        logger.warn(`Failed to query bridge contract: ${contractError.message}`);
+        // Return empty array instead of simulated data
+        return [];
+      }
+    }
+    
+    // No bridge contract configured
+    return [];
   } catch (error) {
     logger.error(`Failed to get bridge transactions: ${error.message}`);
     return [];

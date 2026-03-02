@@ -167,6 +167,20 @@ function BillingContent() {
   const handleSubscribe = async (planId: string) => {
     try {
       toast.loading('Processing subscription...', { id: 'subscribe' })
+
+      // Try Stripe checkout first
+      try {
+        const checkoutRes = await apiClient.billing.checkout(planId)
+        if (checkoutRes.data?.url) {
+          toast.dismiss('subscribe')
+          window.location.href = checkoutRes.data.url
+          return
+        }
+      } catch {
+        // Stripe not configured - fall back to direct subscribe
+      }
+
+      // Fallback: direct subscription (free plans or dev mode)
       await apiClient.billing.subscribe(planId, true)
       toast.success('Subscription activated!', { id: 'subscribe' })
       loadBillingData()

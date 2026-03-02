@@ -168,7 +168,36 @@ module.exports = {
         '90': '90',
         '100': '100',
       },
+      aspectRatio: {
+        'video': '16 / 9',
+        'square': '1 / 1',
+      },
     },
   },
-  plugins: [],
+  plugins: [
+    // Custom plugin for additional utilities
+    function({ addUtilities }) {
+      addUtilities({
+        '.text-balance': {
+          'text-wrap': 'balance',
+        },
+        '.scrollbar-hide': {
+          '-ms-overflow-style': 'none',
+          'scrollbar-width': 'none',
+          '&::-webkit-scrollbar': {
+            display: 'none',
+          },
+        },
+        '.perspective-1000': {
+          perspective: '1000px',
+        },
+        '.preserve-3d': {
+          'transform-style': 'preserve-3d',
+        },
+        '.backface-hidden': {
+          'backface-visibility': 'hidden',
+        },
+      })
+    },
+  ],
 }

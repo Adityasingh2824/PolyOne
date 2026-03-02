@@ -1,21 +1,35 @@
 import { ethers } from 'ethers'
 
-// Contract addresses from environment variables
-export const CONTRACT_ADDRESSES = {
-  CHAIN_FACTORY: process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS || '',
-  VALIDATOR_REGISTRY: process.env.NEXT_PUBLIC_VALIDATOR_REGISTRY_ADDRESS || '',
-  BRIDGE: process.env.NEXT_PUBLIC_BRIDGE_ADDRESS || '',
-  BILLING: process.env.NEXT_PUBLIC_BILLING_ADDRESS || '',
+// Try to import from EVM artifacts if available, otherwise use env vars
+let EVM_ADDRESSES: any = {}
+try {
+  // @ts-ignore - Dynamic import
+  EVM_ADDRESSES = require('@/evm/addresses')?.CONTRACT_ADDRESSES || {}
+} catch (e) {
+  // EVM artifacts not available, use env vars only
 }
 
-// PolyOneChainFactory ABI (minimal interface for frontend)
+// Contract addresses from environment variables or EVM artifacts
+export const CONTRACT_ADDRESSES = {
+  CHAIN_FACTORY: process.env.NEXT_PUBLIC_CHAIN_FACTORY_ADDRESS || EVM_ADDRESSES.CHAIN_FACTORY || '',
+  VALIDATOR_REGISTRY: process.env.NEXT_PUBLIC_VALIDATOR_REGISTRY_ADDRESS || EVM_ADDRESSES.VALIDATOR_REGISTRY || '',
+  BRIDGE: process.env.NEXT_PUBLIC_BRIDGE_ADDRESS || EVM_ADDRESSES.BRIDGE || '',
+  BILLING: process.env.NEXT_PUBLIC_BILLING_ADDRESS || EVM_ADDRESSES.BILLING || '',
+  CHAIN_REGISTRY: process.env.NEXT_PUBLIC_CHAIN_REGISTRY_ADDRESS || EVM_ADDRESSES.CHAIN_REGISTRY || '',
+}
+
+// PolyOneChainFactory ABI (matching the actual contract)
 export const POLYONE_CHAIN_FACTORY_ABI = [
-  // Chain creation
-  "function createChain(string memory _name, string memory _chainType, string memory _rollupType, string memory _gasToken, uint256 _validators, string memory _rpcUrl, string memory _explorerUrl) external returns (uint256)",
+  // Chain creation - ACTUAL SIGNATURE from PolyOneChainFactory.sol
+  "function createChain(string memory _name, string memory _symbol, uint8 _chainType, uint8 _validatorAccess, string memory _gasToken, uint256 _validatorCount, tuple(uint256 maxTps, uint256 blockGasLimit, uint256 blockTime, uint256 maxValidators, bool bridgeEnabled, bool analyticsEnabled) _config) external payable returns (uint256)",
   "function createChainWithConfig(string memory _name, string memory _chainType, string memory _rollupType, string memory _gasToken, uint256 _validators, string memory _rpcUrl, string memory _explorerUrl, tuple(uint256 maxTps, uint256 blockGasLimit, uint256 blockTime, uint256 finalityPeriod) _config) external returns (uint256)",
   
+  // Deployment fee
+  "function deploymentFee() external view returns (uint256)",
+  "function feeCollector() external view returns (address)",
+  
   // Chain queries
-  "function getChain(uint256 _chainId) external view returns (tuple(uint256 id, address owner, string name, string chainType, string rollupType, string gasToken, uint256 validators, uint256 createdAt, bool isActive, string rpcUrl, string explorerUrl, uint8 status))",
+  "function getChain(uint256 _chainId) external view returns (tuple(uint256 id, address owner, string name, string symbol, uint8 chainType, uint8 validatorAccess, string gasToken, uint256 validatorCount, uint8 status, uint256 createdAt, uint256 deployedAt, uint256 pausedAt, string rpcUrl, string explorerUrl, string bridgeUrl, tuple(uint256 maxTps, uint256 blockGasLimit, uint256 blockTime, uint256 maxValidators, bool bridgeEnabled, bool analyticsEnabled) config, uint256 currentVersion, bytes32 lastBackupHash))",
   "function getUserChains(address _user) external view returns (uint256[])",
   "function getTotalChains() external view returns (uint256)",
   

@@ -13,7 +13,7 @@ try {
   // In development, allow missing .env.example
   if (process.env.NODE_ENV !== 'production') {
     console.warn('⚠️  .env.example not found, skipping validation');
-    require('dotenv').config();
+    require('dotenv').config({ path: path.join(__dirname, '../../.env') });
   } else {
     throw error;
   }
@@ -31,7 +31,18 @@ const missingEnvVars = Object.entries(requiredEnvVars)
 
 if (missingEnvVars.length > 0 && process.env.NODE_ENV === 'production') {
   console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('Please check .env.example for required variables');
   process.exit(1);
+}
+
+// Warn about weak JWT secrets in production
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.JWT_SECRET || 
+      process.env.JWT_SECRET === 'dev-secret-change-in-production' ||
+      process.env.JWT_SECRET.length < 32) {
+    console.error('❌ JWT_SECRET must be at least 32 characters in production');
+    process.exit(1);
+  }
 }
 
 // Export validated configuration
@@ -79,6 +90,22 @@ module.exports = {
 
   // Monitoring
   SENTRY_DSN: process.env.SENTRY_DSN || '',
-  PROMETHEUS_PORT: parseInt(process.env.PROMETHEUS_PORT || '9090', 10)
+  PROMETHEUS_PORT: parseInt(process.env.PROMETHEUS_PORT || '9090', 10),
+
+  // Email Service
+  SMTP_HOST: process.env.SMTP_HOST || 'smtp.gmail.com',
+  SMTP_PORT: parseInt(process.env.SMTP_PORT || '587', 10),
+  SMTP_SECURE: process.env.SMTP_SECURE === 'true',
+  SMTP_USER: process.env.SMTP_USER || '',
+  SMTP_PASSWORD: process.env.SMTP_PASSWORD || '',
+  SUPPORT_EMAIL: process.env.SUPPORT_EMAIL || 'support@polyone.io',
+
+  // Polygon Network Selection
+  POLYGON_NETWORK: process.env.POLYGON_NETWORK || 'testnet',
+
+  // Stripe (optional - for billing integration)
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
+  STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || ''
 };
 

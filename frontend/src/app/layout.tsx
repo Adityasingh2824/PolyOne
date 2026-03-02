@@ -1,9 +1,21 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Outfit, JetBrains_Mono } from 'next/font/google'
+import dynamic from 'next/dynamic'
 import './globals.css'
-import { Toaster } from 'react-hot-toast'
+import ToasterWrapper from '@/components/ToasterWrapper'
+import { ThemeProvider } from '@/components/ThemeProvider'
+import { WhiteLabelProvider } from '@/components/WhiteLabelProvider'
 
-import { Providers } from './providers'
+// Dynamically import Providers with SSR disabled to avoid getDefaultConfig SSR issues
+const Providers = dynamic(
+  () => import('./providers').then((mod) => ({ default: mod.Providers })),
+  {
+    ssr: false,
+    loading: () => (
+      <div style={{ minHeight: '100vh', background: '#030014', color: '#fff' }} />
+    )
+  }
+)
 
 const outfit = Outfit({ 
   subsets: ['latin'],
@@ -39,11 +51,12 @@ export const metadata: Metadata = {
     shortcut: '/favicon.svg',
     apple: '/favicon.svg'
   },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 5,
-  },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
   themeColor: '#030014',
 }
 
@@ -56,44 +69,12 @@ export default function RootLayout({
     <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
       <body className="font-sans antialiased">
         <Providers>
-          {children}
-          <Toaster 
-            position="bottom-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                background: 'linear-gradient(135deg, rgba(15, 7, 36, 0.95) 0%, rgba(10, 1, 24, 0.9) 100%)',
-                backdropFilter: 'blur(20px)',
-                color: '#fff',
-                border: '1px solid rgba(168, 85, 247, 0.3)',
-                borderRadius: '12px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 40px rgba(168, 85, 247, 0.1)',
-                fontFamily: 'var(--font-outfit)',
-                fontSize: '14px',
-                padding: '12px 16px',
-              },
-              success: {
-                duration: 3000,
-                iconTheme: {
-                  primary: '#10b981',
-                  secondary: '#fff',
-                },
-              },
-              error: {
-                duration: 4000,
-                iconTheme: {
-                  primary: '#ef4444',
-                  secondary: '#fff',
-                },
-              },
-              loading: {
-                iconTheme: {
-                  primary: '#a855f7',
-                  secondary: '#fff',
-                },
-              },
-            }}
-          />
+          <WhiteLabelProvider>
+            <ThemeProvider>
+              {children}
+              <ToasterWrapper />
+            </ThemeProvider>
+          </WhiteLabelProvider>
         </Providers>
       </body>
     </html>

@@ -24,6 +24,7 @@ interface UseWalletResult {
 }
 
 export function useWallet(): UseWalletResult {
+  // Hooks must be called unconditionally - WagmiProvider should always be rendered
   const { address, status, connector } = useAccount()
   const chainId = useChainId()
   const { openConnectModal } = useConnectModal()
@@ -42,20 +43,29 @@ export function useWallet(): UseWalletResult {
   })
 
   const connect = useCallback(async () => {
-    if (!openConnectModal) {
-      const message = 'Wallet modal is not available yet. Please try again in a moment.'
-      setLastError(message)
-      throw new Error(message)
-    }
+    try {
+      if (!openConnectModal) {
+        const message = 'Wallet modal is not available yet. Please try again in a moment.'
+        setLastError(message)
+        throw new Error(message)
+      }
 
-    setLastError(null)
-    openConnectModal()
+      setLastError(null)
+      openConnectModal()
+    } catch (error: any) {
+      const message = error?.message || 'Failed to open wallet connection modal'
+      setLastError(message)
+      console.error('Wallet connection error:', error)
+      // Don't throw - allow UI to continue working
+    }
   }, [openConnectModal])
 
   const disconnect = useCallback(async () => {
     try {
-      await disconnectAsync()
-      setLastError(null)
+      if (disconnectAsync) {
+        await disconnectAsync()
+        setLastError(null)
+      }
     } catch (error: any) {
       const message = error?.message || 'Failed to disconnect wallet'
       setLastError(message)
@@ -93,20 +103,27 @@ export function useWallet(): UseWalletResult {
   }, [switchChainAsync])
 
   const getProvider = useCallback(async (): Promise<EIP1193Provider> => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-      return (window as any).ethereum as EIP1193Provider
-    }
-
-    if (connector?.getProvider) {
-      const provider = await connector.getProvider()
-      if (provider) {
-        return provider as EIP1193Provider
+    try {
+      if (typeof window !== 'undefined' && (window as any).ethereum) {
+        return (window as any).ethereum as EIP1193Provider
       }
-    }
 
-    const message = 'Wallet provider is not available. Please connect your wallet again.'
-    setLastError(message)
-    throw new Error(message)
+      if (connector?.getProvider) {
+        const provider = await connector.getProvider()
+        if (provider) {
+          return provider as EIP1193Provider
+        }
+      }
+
+      const message = 'Wallet provider is not available. Please connect your wallet again.'
+      setLastError(message)
+      throw new Error(message)
+    } catch (error: any) {
+      const message = error?.message || 'Wallet provider is not available'
+      setLastError(message)
+      console.error('Get provider error:', error)
+      throw error
+    }
   }, [connector])
 
   useEffect(() => {
@@ -142,4 +159,3 @@ export function useWallet(): UseWalletResult {
     getProvider
   }
 }
-
