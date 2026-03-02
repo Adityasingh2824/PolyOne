@@ -302,8 +302,8 @@ const ChainCard = ({ chain, index, onClick, onCopy, onExternal }: {
                 { label: 'Validators', value: chain.validator_count || chain.validators || chain.initialValidators || 0 },
                 { 
                   label: 'Status', 
-                  value: chain.status === 'active' || chain.isActive ? '● Active' : chain.status === 'deploying' ? '● Deploying' : chain.status === 'failed' ? '● Failed' : '○ Inactive',
-                  color: chain.status === 'active' || chain.isActive ? 'text-emerald-400' : chain.status === 'deploying' ? 'text-amber-400' : 'text-gray-400'
+                  value: chain.status === 'active' || chain.isActive ? '● Active' : chain.status === 'deploying' ? '● Deploying' : chain.status === 'failed' ? '● Failed' : chain.status === 'on-chain-registered' || chain.onChainRegistered ? '● Registered' : '○ Inactive',
+                  color: chain.status === 'active' || chain.isActive ? 'text-emerald-400' : chain.status === 'deploying' ? 'text-amber-400' : chain.status === 'on-chain-registered' || chain.onChainRegistered ? 'text-emerald-400' : 'text-gray-400'
                 },
                 { label: 'Created', value: chain.created_at || chain.createdAt ? new Date(chain.created_at || chain.createdAt).toLocaleDateString() : 'N/A' },
               ].map((item) => (
@@ -544,7 +544,7 @@ export default function DashboardPage() {
 
   // Calculate stats
   const totalChains = chains.length
-  const activeChains = chains.filter(c => c.status === 'active' || c.isActive).length
+  const activeChains = chains.filter(c => c.status === 'active' || c.isActive || c.status === 'on-chain-registered' || c.onChainRegistered).length
   const onChainChains = chains.filter(c => c.onChainRegistered).length
   const totalValidators = chains.reduce((acc, c) => acc + (parseInt(c.validators || c.initialValidators || '0')), 0)
 

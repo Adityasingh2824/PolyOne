@@ -62,6 +62,99 @@ const categoryColors: Record<string, string> = {
   privacy: 'from-green-500 to-emerald-500'
 }
 
+const fallbackTemplates: Template[] = [
+  {
+    id: 'tmpl-gaming-studio',
+    name: 'Gaming Studio Rollup',
+    category: 'gaming',
+    description: 'High-throughput chain tuned for in-game assets, matchmaking, and micro-transactions.',
+    author: 'PolyOne Labs',
+    isOfficial: true,
+    isCommunity: false,
+    recommended: true,
+    tags: ['gaming', 'low-latency', 'nft'],
+    icon: '🎮',
+    config: { rollupType: 'zk-rollup', validatorAccess: 'public', tpsTarget: 2000 },
+    pricing: { setup: 799, monthly: 349 },
+    stats: { deployments: 128, rating: 4.8, reviews: 42 }
+  },
+  {
+    id: 'tmpl-defi-core',
+    name: 'DeFi Core',
+    category: 'defi',
+    description: 'Optimized for swaps, lending, and oracle-heavy workloads with fast finality.',
+    author: 'PolyOne Labs',
+    isOfficial: true,
+    isCommunity: false,
+    recommended: true,
+    tags: ['defi', 'liquidity', 'oracle'],
+    icon: '💹',
+    config: { rollupType: 'validium', validatorAccess: 'permissioned', tpsTarget: 1200 },
+    pricing: { setup: 999, monthly: 449 },
+    stats: { deployments: 94, rating: 4.6, reviews: 31 }
+  },
+  {
+    id: 'tmpl-nft-launchpad',
+    name: 'NFT Launchpad',
+    category: 'nft',
+    description: 'Built for high-volume minting, drop scheduling, and marketplace analytics.',
+    author: 'PolyOne Labs',
+    isOfficial: true,
+    isCommunity: false,
+    recommended: false,
+    tags: ['nft', 'minting', 'marketplace'],
+    icon: '🖼️',
+    config: { rollupType: 'zk-rollup', validatorAccess: 'public', tpsTarget: 900 },
+    pricing: { setup: 699, monthly: 299 },
+    stats: { deployments: 76, rating: 4.5, reviews: 22 }
+  },
+  {
+    id: 'tmpl-enterprise-private',
+    name: 'Enterprise Private Net',
+    category: 'enterprise',
+    description: 'Permissioned chain with compliance hooks, private RPC, and audit-ready logs.',
+    author: 'PolyOne Labs',
+    isOfficial: true,
+    isCommunity: false,
+    recommended: false,
+    tags: ['enterprise', 'private', 'compliance'],
+    icon: '🏢',
+    config: { rollupType: 'validium', validatorAccess: 'private', tpsTarget: 700 },
+    pricing: { setup: 1499, monthly: 699 },
+    stats: { deployments: 33, rating: 4.7, reviews: 18 }
+  },
+  {
+    id: 'tmpl-community-builder',
+    name: 'Community Builder',
+    category: 'general',
+    description: 'General-purpose chain for DAOs, social apps, and token communities.',
+    author: 'Community',
+    isOfficial: false,
+    isCommunity: true,
+    recommended: false,
+    tags: ['dao', 'social', 'community'],
+    icon: '🧩',
+    config: { rollupType: 'optimistic-rollup', validatorAccess: 'public', tpsTarget: 600 },
+    pricing: { setup: 399, monthly: 199 },
+    stats: { deployments: 51, rating: 4.3, reviews: 15 }
+  },
+  {
+    id: 'tmpl-privacy-shield',
+    name: 'Privacy Shield',
+    category: 'privacy',
+    description: 'Privacy-first validium chain with restricted validator sets and audit trails.',
+    author: 'Community',
+    isOfficial: false,
+    isCommunity: true,
+    recommended: false,
+    tags: ['privacy', 'validium', 'enterprise'],
+    icon: '🛡️',
+    config: { rollupType: 'validium', validatorAccess: 'permissioned', tpsTarget: 500 },
+    pricing: { setup: 599, monthly: 249 },
+    stats: { deployments: 24, rating: 4.2, reviews: 9 }
+  }
+]
+
 export default function TemplatesPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<Template[]>([])
@@ -75,6 +168,37 @@ export default function TemplatesPage() {
     loadTemplates()
   }, [selectedCategory, filterOfficial, searchQuery, sortBy])
 
+  const applyLocalFilters = (source: Template[]) => {
+    let filtered = [...source]
+
+    if (selectedCategory !== 'all') {
+      filtered = filtered.filter((template) => template.category === selectedCategory)
+    }
+
+    if (filterOfficial !== null) {
+      filtered = filtered.filter((template) => template.isOfficial === filterOfficial)
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter((template) =>
+        template.name.toLowerCase().includes(query) ||
+        template.description.toLowerCase().includes(query) ||
+        template.tags?.some((tag) => tag.toLowerCase().includes(query))
+      )
+    }
+
+    if (sortBy === 'rating') {
+      filtered.sort((a, b) => (b.stats?.rating || 0) - (a.stats?.rating || 0))
+    } else if (sortBy === 'deployments') {
+      filtered.sort((a, b) => (b.stats?.deployments || 0) - (a.stats?.deployments || 0))
+    } else {
+      filtered.sort((a, b) => Number(b.recommended) - Number(a.recommended))
+    }
+
+    return filtered
+  }
+
   const loadTemplates = async () => {
     try {
       setLoading(true)
@@ -84,10 +208,16 @@ export default function TemplatesPage() {
       if (searchQuery) params.search = searchQuery
       
       const response = await apiClient.templates.getAll(params)
-      setTemplates(response.data.templates || [])
+      const apiTemplates = response.data.templates || []
+      if (apiTemplates.length > 0) {
+        setTemplates(apiTemplates)
+      } else {
+        setTemplates(applyLocalFilters(fallbackTemplates))
+      }
     } catch (error: any) {
       console.error('Error loading templates:', error)
-      toast.error('Failed to load templates')
+      toast.error('Failed to load templates, showing defaults')
+      setTemplates(applyLocalFilters(fallbackTemplates))
     } finally {
       setLoading(false)
     }

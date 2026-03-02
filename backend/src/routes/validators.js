@@ -6,11 +6,15 @@ const db = require('../services/database');
 const { body, validationResult } = require('express-validator');
 const { ethers } = require('ethers');
 
-// Middleware to verify JWT
+// Middleware to verify JWT (optional for development)
 const authenticate = (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
+      if (process.env.NODE_ENV === 'development') {
+        req.userId = req.query.userId || req.body.walletAddress || 'dev-user';
+        return next();
+      }
       return res.status(401).json({ message: 'No token provided' });
     }
 
@@ -18,6 +22,10 @@ const authenticate = (req, res, next) => {
     req.userId = decoded.userId;
     next();
   } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      req.userId = req.query.userId || req.body.walletAddress || 'dev-user';
+      return next();
+    }
     res.status(401).json({ message: 'Invalid token' });
   }
 };

@@ -1,0 +1,79 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: polyone-cdk-${CDK_CHAIN_ID:-default}-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CDK_DB_USER:-cdk}
+      POSTGRES_PASSWORD: ${CDK_DB_PASSWORD:-cdk}
+      POSTGRES_DB: ${CDK_DB_NAME:-zkevm}
+    ports:
+      - "${CDK_DB_PORT:-5432}:5432"
+    volumes:
+      - cdk_postgres_data:/var/lib/postgresql/data
+
+  zkevm-node:
+    image: hermeznetwork/zkevm-node:latest
+    container_name: polyone-cdk-${CDK_CHAIN_ID:-default}-node
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgres://${CDK_DB_USER:-cdk}:${CDK_DB_PASSWORD:-cdk}@postgres:5432/${CDK_DB_NAME:-zkevm}
+      RPC_PORT: ${CDK_RPC_PORT:-8123}
+      WS_PORT: ${CDK_WS_PORT:-8124}
+      NETWORK_ID: ${CDK_NETWORK_ID:-1000}
+      LOG_LEVEL: ${CDK_LOG_LEVEL:-info}
+    ports:
+      - "${CDK_RPC_PORT:-8123}:8123"
+      - "${CDK_WS_PORT:-8124}:8124"
+    volumes:
+      - cdk_node_data:/var/lib/zkevm
+
+  zkevm-aggregator:
+    image: hermeznetwork/zkevm-aggregator:latest
+    container_name: polyone-cdk-${CDK_CHAIN_ID:-default}-aggregator
+    restart: unless-stopped
+    depends_on:
+      - zkevm-node
+      - postgres
+    environment:
+      DATABASE_URL: postgres://${CDK_DB_USER:-cdk}:${CDK_DB_PASSWORD:-cdk}@postgres:5432/${CDK_DB_NAME:-zkevm}
+      LOG_LEVEL: ${CDK_LOG_LEVEL:-info}
+
+  zkevm-prover:
+    image: hermeznetwork/zkevm-prover:latest
+    container_name: polyone-cdk-${CDK_CHAIN_ID:-default}-prover
+    restart: unless-stopped
+    depends_on:
+      - zkevm-node
+    environment:
+      LOG_LEVEL: ${CDK_LOG_LEVEL:-info}
+
+  zkevm-bridge-service:
+    image: hermeznetwork/zkevm-bridge-service:latest
+    container_name: polyone-cdk-${CDK_CHAIN_ID:-default}-bridge
+    restart: unless-stopped
+    depends_on:
+      - zkevm-node
+    environment:
+      LOG_LEVEL: ${CDK_LOG_LEVEL:-info}
+    ports:
+      - "${CDK_BRIDGE_PORT:-8125}:8125"
+
+  zkevm-bridge-ui:
+    image: hermeznetwork/zkevm-bridge-ui:latest
+    container_name: polyone-cdk-${CDK_CHAIN_ID:-default}-bridge-ui
+    restart: unless-stopped
+    depends_on:
+      - zkevm-bridge-service
+    environment:
+      BRIDGE_API_URL: ${CDK_BRIDGE_API_URL:-http://localhost:8125}
+    ports:
+      - "${CDK_BRIDGE_UI_PORT:-8126}:80"
+
+volumes:
+  cdk_postgres_data:
+  cdk_node_data:

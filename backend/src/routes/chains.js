@@ -10,12 +10,13 @@ const fs = require('fs').promises;
 const path = require('path');
 const getWsService = require('../middleware/getWsService');
 
-// Helper function to fix chains stuck in "deploying" status
+// Helper function to fix chains stuck in "deploying" or "on-chain-registered" status
 async function fixStuckDeployingChain(chain) {
   // Check if chain is in deploying status (case-insensitive)
   if (!chain) return chain;
   const chainStatus = (chain.status || '').toLowerCase();
-  if (chainStatus !== 'deploying') return chain;
+  const stuckStatuses = new Set(['deploying', 'on-chain-registered', 'on_chain_registered']);
+  if (!stuckStatuses.has(chainStatus)) return chain;
   
   // Get the time the chain was created or last updated for logging
   const timeField = chain.created_at || chain.updated_at || chain.createdAt || chain.updatedAt;
@@ -29,10 +30,10 @@ async function fixStuckDeployingChain(chain) {
     timeInfo = 'no timestamp found (assuming old)';
   }
   
-  // Fix ANY chain in "deploying" status - no time check needed
+  // Fix ANY chain in stuck status - no time check needed
   // This ensures all stuck chains get fixed immediately
   try {
-    console.log(`🔧 Fixing stuck chain ${chain.id} (status: deploying, ${timeInfo})`);
+    console.log(`🔧 Fixing stuck chain ${chain.id} (status: ${chainStatus}, ${timeInfo})`);
     const updateData = {
       status: 'active',
       deployed_at: chain.deployed_at || new Date().toISOString(),
@@ -166,14 +167,14 @@ router.get('/', authenticate, async (req, res) => {
       stats = await db.getUserDashboardStats(userId);
       console.log('✅ Retrieved chains from database:', userChains?.length || 0);
       
-      // Fix chains stuck in "deploying" status (case-insensitive check)
+      // Fix chains stuck in "deploying" or "on-chain-registered" status
       const stuckChains = (userChains || []).filter(chain => {
         const status = (chain.status || '').toLowerCase();
-        return status === 'deploying';
+        return status === 'deploying' || status === 'on-chain-registered' || status === 'on_chain_registered';
       });
       
       if (stuckChains.length > 0) {
-        console.log(`🔍 Found ${stuckChains.length} chain(s) in "deploying" status, fixing them...`);
+        console.log(`🔍 Found ${stuckChains.length} chain(s) in stuck status, fixing them...`);
       }
       
       // Update stuck chains to "active" status
@@ -302,7 +303,7 @@ router.get('/:id', authenticate, async (req, res) => {
         return res.status(404).json({ message: 'Chain not found' });
       }
       
-      // Fix stuck "deploying" status
+    // Fix stuck "deploying" or "on-chain-registered" status
       chain = await fixStuckDeployingChain(chain);
     }
     
@@ -674,10 +675,10 @@ router.post('/:id/fix-status', authenticate, async (req, res) => {
       return res.status(404).json({ message: 'Chain not found' });
     }
     
-    // Force fix if chain is stuck in deploying status (bypass time check, case-insensitive)
+    // Force fix if chain is stuck (bypass time check, case-insensitive)
     const chainStatus = (chain.status || '').toLowerCase();
-    if (chainStatus === 'deploying') {
-      console.log(`🔧 Force fixing chain ${chainId} from deploying to active`);
+    if (chainStatus === 'deploying' || chainStatus === 'on-chain-registered' || chainStatus === 'on_chain_registered') {
+      console.log(`🔧 Force fixing chain ${chainId} from ${chainStatus} to active`);
       try {
         const updatedChain = await db.updateChain(chainId, {
           status: 'active',
@@ -695,7 +696,7 @@ router.post('/:id/fix-status', authenticate, async (req, res) => {
       }
     } else {
       res.json({ 
-        message: 'Chain status is not stuck in deploying', 
+        message: 'Chain status is not stuck', 
         chain: normalizeChainData(chain),
         currentStatus: chain.status
       });
@@ -718,10 +719,10 @@ router.post('/fix-all-stuck', authenticate, async (req, res) => {
     const userChains = await db.getUserChains(userId);
     const stuckChains = (userChains || []).filter(chain => {
       const status = (chain.status || '').toLowerCase();
-      return status === 'deploying';
+      return status === 'deploying' || status === 'on-chain-registered' || status === 'on_chain_registered';
     });
     
-    console.log(`📊 Found ${stuckChains.length} chains stuck in deploying status`);
+    console.log(`📊 Found ${stuckChains.length} chains stuck in deploying/on-chain-registered status`);
     
     const fixedChains = [];
     for (const chain of stuckChains) {

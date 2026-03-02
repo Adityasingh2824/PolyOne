@@ -450,12 +450,21 @@ export default function ChainDetailPage() {
   }
 
   const getStatusDisplay = () => {
-    if (chain.status === 'active' || chain.isActive) {
+    const s = (chain.status || '').toLowerCase().replace(/-/g, '_')
+    if (s === 'active' || chain.isActive) {
       return { text: 'Active', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' }
-    } else if (chain.status === 'deploying') {
+    } else if (s === 'deploying') {
       return { text: 'Deploying', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' }
+    } else if (s === 'on_chain_registered' || s === 'on-chain-registered' || chain.onChainRegistered) {
+      return { text: 'Active', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' }
+    } else if (s === 'pending') {
+      return { text: 'Pending', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' }
+    } else if (s === 'paused') {
+      return { text: 'Paused', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' }
+    } else if (s === 'failed') {
+      return { text: 'Failed', color: 'bg-red-500/20 text-red-400 border-red-500/30' }
     } else {
-      return { text: chain.status || 'Inactive', color: 'bg-red-500/20 text-red-400 border-red-500/30' }
+      return { text: chain.status || 'Inactive', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' }
     }
   }
   

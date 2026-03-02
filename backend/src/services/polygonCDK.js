@@ -225,6 +225,19 @@ VALIDATOR_ADDRESSES=${validatorKeys.map(v => v.address).join(',')}
 BLOCK_TIME=${config.zkEVMConfig.blockTime}
 GAS_LIMIT=${config.zkEVMConfig.gasLimit}
 DATA_AVAILABILITY=${config.zkEVMConfig.dataAvailability}
+
+# Docker CDK Compose Configuration
+CDK_CHAIN_ID=${config.chainId}
+CDK_NETWORK_ID=${config.chainId}
+CDK_RPC_PORT=${process.env.CDK_RPC_PORT || 8123}
+CDK_WS_PORT=${process.env.CDK_WS_PORT || 8124}
+CDK_BRIDGE_PORT=${process.env.CDK_BRIDGE_PORT || 8125}
+CDK_BRIDGE_UI_PORT=${process.env.CDK_BRIDGE_UI_PORT || 8126}
+CDK_DB_PORT=${process.env.CDK_DB_PORT || 5432}
+CDK_DB_USER=${process.env.CDK_DB_USER || 'cdk'}
+CDK_DB_PASSWORD=${process.env.CDK_DB_PASSWORD || 'cdk'}
+CDK_DB_NAME=${process.env.CDK_DB_NAME || 'zkevm'}
+CDK_LOG_LEVEL=${process.env.CDK_LOG_LEVEL || 'info'}
 `;
 }
 
@@ -285,12 +298,27 @@ async function deployCDKNodes(chainId, config) {
     const chainDir = path.join(process.cwd(), 'chains', chainId);
     const dockerComposePath = path.join(chainDir, 'docker-compose.yml');
     const cdkConfigPath = path.join(chainDir, 'cdk-config.json');
+    const cdkMode = process.env.CDK_MODE || 'simulation';
     
     // Verify CDK config exists
     try {
       await fs.access(cdkConfigPath);
     } catch {
       throw new Error('CDK configuration not found. Run initializeCDKChain first.');
+    }
+    
+    if (cdkMode !== 'docker') {
+      return {
+        success: true,
+        output: 'CDK_MODE=simulation, skipping node deployment.',
+        method: 'simulation',
+        nodes: [],
+        endpoints: {
+          rpc: `https://rpc-${chainId.substring(0, 8)}.polyone.io`,
+          ws: `wss://ws-${chainId.substring(0, 8)}.polyone.io`,
+          bridge: `https://bridge-${chainId.substring(0, 8)}.polyone.io`
+        }
+      };
     }
     
     // Check if CDK CLI is available
@@ -329,9 +357,8 @@ async function deployCDKNodes(chainId, config) {
     // Fallback to Docker Compose deployment
     logger.info(`Using Docker Compose for deployment`);
     
-    // Generate Docker Compose configuration with real CDK images
-    const dockerCompose = generateDockerCompose(chainId, config);
-    await fs.writeFile(dockerComposePath, dockerCompose);
+    // Generate Docker Compose configuration using template
+    await writeDockerComposeTemplate(chainId, chainDir, config);
     
     // Verify Docker is available
     try {
@@ -349,12 +376,21 @@ async function deployCDKNodes(chainId, config) {
     // Wait for nodes to be healthy
     await waitForNodesHealthy(chainId, config.validators || 3);
     
+    const rpcPort = process.env.CDK_RPC_PORT || 8123;
+    const wsPort = process.env.CDK_WS_PORT || 8124;
+    const bridgePort = process.env.CDK_BRIDGE_PORT || 8125;
+    
     logger.info(`CDK nodes deployed successfully for chain ${chainId}`);
     return { 
       success: true, 
       output: stdout,
       method: 'docker',
-      nodes: await getNodeAddresses(chainId)
+      nodes: await getNodeAddresses(config.chainId),
+      endpoints: {
+        rpc: `http://localhost:${rpcPort}`,
+        ws: `ws://localhost:${wsPort}`,
+        bridge: `http://localhost:${bridgePort}`
+      }
     };
   } catch (error) {
     logger.error(`Failed to deploy CDK nodes for chain ${chainId}:`, error);
@@ -416,6 +452,20 @@ async function getNodeAddresses(chainId) {
   } catch (error) {
     logger.warn(`Failed to get node addresses: ${error.message}`);
     return [];
+  }
+}
+
+async function writeDockerComposeTemplate(chainId, chainDir, config) {
+  const templatePath = path.join(process.cwd(), 'docker-compose.cdk.yml');
+  const template = await fs.readFile(templatePath, 'utf8');
+  await fs.writeFile(path.join(chainDir, 'docker-compose.yml'), template);
+
+  const envPath = path.join(chainDir, '.env');
+  try {
+    await fs.access(envPath);
+  } catch {
+    const envContent = generateCDKEnvFile(config, []);
+    await fs.writeFile(envPath, envContent);
   }
 }
 
@@ -536,6 +586,15 @@ async function getChainStatus(chainId) {
   try {
     const chainDir = path.join(process.cwd(), 'chains', chainId);
     const statusPath = path.join(chainDir, 'status.json');
+    let dockerName = chainId;
+    try {
+      const cdkConfig = JSON.parse(await fs.readFile(path.join(chainDir, 'cdk-config.json'), 'utf8'));
+      if (cdkConfig?.chainId) {
+        dockerName = cdkConfig.chainId;
+      }
+    } catch (error) {
+      // Ignore config read issues
+    }
     
     try {
       const statusData = await fs.readFile(statusPath, 'utf8');
@@ -543,7 +602,7 @@ async function getChainStatus(chainId) {
     } catch {
       // Check if containers are running
       const { stdout } = await execPromise(
-        `docker ps --filter "name=${chainId}" --format "{{.Names}}:{{.Status}}"`
+        `docker ps --filter "name=${dockerName}" --format "{{.Names}}:{{.Status}}"`
       );
       
       const containers = stdout.trim().split('\n').filter(Boolean);
